@@ -17,6 +17,10 @@ public class Order
     public Guid TariffId { get; set; }
     public Tariff Tariff { get; set; } = null!;
 
+    public Guid? RouteId { get; set; }
+    public Route? Route { get; set; }
+
+    public int Quantity { get; set; } = 1;
     public decimal TotalAmount { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

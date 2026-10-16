@@ -11,7 +11,7 @@ namespace CityTransport.Utils.TicketUtils
     public class QRCodeGeneratorService
     {
         // Для AES-256 довжина ключа повинна бути рівно 32 байти (символи)
-        private  readonly byte[] _encryptionKey;
+        private readonly byte[] _encryptionKey;
 
         public QRCodeGeneratorService(IOptions<CryptoSettings> options)
         {
@@ -43,8 +43,51 @@ namespace CityTransport.Utils.TicketUtils
         }
 
         /// <summary>
-        /// Симетричне шифрування AES
+        /// Криптографічна перевірка та дешифрування payload з QR-коду
         /// </summary>
+        public bool TryDecryptPayload(string encryptedPayload, out string? ticketGuid, out DateTime generatedAt)
+        {
+            ticketGuid = null;
+            generatedAt = default;
+
+            try
+            {
+                var fullCipher = Convert.FromBase64String(encryptedPayload);
+                if (fullCipher.Length < 16) return false;
+
+                using var aes = Aes.Create();
+                aes.Key = _encryptionKey;
+
+                // витягуємо IV (перші 16 байт)
+                byte[] iv = new byte[16];
+                Array.Copy(fullCipher, 0, iv, 0, 16);
+                aes.IV = iv;
+
+                using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                using var msDecrypt = new MemoryStream(fullCipher, 16, fullCipher.Length - 16);
+                using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+                using var srDecrypt = new StreamReader(csDecrypt);
+
+                string plainText = srDecrypt.ReadToEnd();
+                var parts = plainText.Split('|');
+                
+                if (parts.Length == 2 && Guid.TryParse(parts[0], out var parsedGuid) && 
+                    DateTime.TryParse(parts[1], null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsedTime))
+                {
+                    ticketGuid = parsedGuid.ToString();
+                    generatedAt = parsedTime;
+                    return true;
+                }
+            }
+            catch
+            {
+                // помилка дешифрування
+                return false;
+            }
+
+            return false;
+        }
+
         private string EncryptString(string plainText, byte[] key)
         {
             using var aes = Aes.Create();

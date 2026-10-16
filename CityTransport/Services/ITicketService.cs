@@ -9,4 +9,5 @@ public interface ITicketService
 
     
     Task<IEnumerable<string>> GetAvailableTicketTypesAsync();
+    Task<TicketVerificationResultDto> VerifyAndUseTicketAsync(string encryptedPayload);
 }

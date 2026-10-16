@@ -3,7 +3,6 @@ using CityTransport.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 
 namespace CityTransport.Controllers;
 
@@ -77,5 +76,15 @@ public class TicketsController : ControllerBase
     {
         var types = await _ticketService.GetAvailableTicketTypesAsync();
         return Ok(types);
+    }
+    /// <summary>
+    /// Валідація та сканування квитка за його зашифрованим QR payload (для контролерів/водіїв)
+    /// </summary>
+    [HttpPost("verify")]
+    [ProducesResponseType(typeof(TicketVerificationResultDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> VerifyTicket([FromBody] VerifyTicketRequestDto request)
+    {
+        var result = await _ticketService.VerifyAndUseTicketAsync(request.EncryptedPayload);
+        return Ok(result);
     }
 }

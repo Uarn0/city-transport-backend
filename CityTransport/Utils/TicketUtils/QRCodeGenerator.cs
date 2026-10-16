@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -24,14 +23,19 @@ namespace CityTransport.Utils.TicketUtils
         }
 
         /// <summary>
-        /// Генерує зашифрований payload (на основі унікального токена квитка/сесії) та створює Base64-рядок PNG зображення QR-коду.
+        /// Генерує чистий зашифрований payload для збереження в базу даних (Ticket.QrCodePayload)
         /// </summary>
-        public string GenerateEncryptedQRCode(string ticketGuid)
+        public string GenerateEncryptedPayload(string ticketGuid)
         {
             string rawPayload = $"{ticketGuid}|{DateTime.UtcNow:O}";
+            return EncryptString(rawPayload, _encryptionKey);
+        }
 
-            string encryptedPayload = EncryptString(rawPayload, _encryptionKey);
-
+        /// <summary>
+        /// Генерує Base64-рядок PNG зображення QR-коду на основі вже зашифрованого пейлоаду
+        /// </summary>
+        public string GenerateQRCodeImage(string encryptedPayload)
+        {
             using (var qrGenerator = new QRCoder.QRCodeGenerator())
             {
                 var qrCodeData = qrGenerator.CreateQrCode(encryptedPayload, QRCoder.QRCodeGenerator.ECCLevel.Q);
@@ -42,9 +46,7 @@ namespace CityTransport.Utils.TicketUtils
             }
         }
 
-        /// <summary>
-        /// Криптографічна перевірка та дешифрування payload з QR-коду
-        /// </summary>
+        // --- Метод дешифрування залишається без змін ---
         public bool TryDecryptPayload(string encryptedPayload, out string? ticketGuid, out DateTime generatedAt)
         {
             ticketGuid = null;

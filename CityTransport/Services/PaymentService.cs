@@ -2,6 +2,8 @@ using CityTransport.Data;
 using CityTransport.DTOs.Payments;
 using CityTransport.Entities;
 using Microsoft.EntityFrameworkCore;
+using CityTransport.Utils.TicketUtils;
+
 
 namespace CityTransport.Services;
 
@@ -9,11 +11,16 @@ public class PaymentService : IPaymentService
 {
     private readonly AppDbContext _dbContext;
     private readonly ILogger<PaymentService> _logger;
+    private readonly QRCodeGeneratorService _qrCodeGenerator;
 
-    public PaymentService(AppDbContext dbContext, ILogger<PaymentService> logger)
+    public PaymentService(
+        AppDbContext dbContext, 
+        ILogger<PaymentService> logger, 
+        QRCodeGeneratorService qrCodeGenerator)
     {
         _dbContext = dbContext;
         _logger = logger;
+        _qrCodeGenerator = qrCodeGenerator;
     }
 
     public async Task<PaymentWebhookResponseDto> ProcessMonobankWebhookAsync(MonobankWebhookDto webhookDto)
@@ -69,13 +76,13 @@ public class PaymentService : IPaymentService
         order.Status = OrderStatus.Paid;
 
         var durationMinutes = order.Tariff?.DurationMinutes ?? 60;
-
+        var ticketId = Guid.NewGuid();
         var ticket = new Ticket
         {
             Id = Guid.NewGuid(),
             UserId = order.UserId,
             OrderId = order.Id,
-            QrCodePayload = Guid.NewGuid().ToString("N"), // Unique payload for mobile App QR rendering
+            QrCodePayload = _qrCodeGenerator.GenerateEncryptedPayload(Guid.NewGuid().ToString()),
             Status = TicketStatus.Active,
             PurchasedAt = DateTime.UtcNow,
             ValidUntil = DateTime.UtcNow.AddMinutes(durationMinutes)

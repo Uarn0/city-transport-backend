@@ -16,7 +16,7 @@ public class QrCodeGeneratorServiceTests
         var service = new QRCodeGeneratorService(cryptoSettings);
         string testTicketGuid = Guid.NewGuid().ToString();
 
-        string result = service.GenerateEncryptedQRCode(testTicketGuid);
+        string result = service.GenerateEncryptedPayload(testTicketGuid);
 
         Assert.False(string.IsNullOrEmpty(result));
 

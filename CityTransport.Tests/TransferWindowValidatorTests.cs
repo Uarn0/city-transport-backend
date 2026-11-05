@@ -13,6 +13,49 @@ public class TransferWindowValidatorTests
     }
 
     [Fact]
+    public void ValidateTransfer_WhenRequestIsNull_ThrowsArgumentNullException()
+    {
+        // Arrange
+        TransferValidationRequest? nullRequest = null;
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => _validator.ValidateTransfer(nullRequest!));
+    }
+
+    [Theory]
+    [InlineData(10, 50)]
+    [InlineData(25, 35)]
+    [InlineData(40, 20)]
+    [InlineData(55, 5)]
+    [InlineData(59, 1)]
+    public void ValidateTransfer_WithVariousElapsedMinutes_CalculatesExpectedRemainingWindow(
+        int elapsedMinutes, 
+        int expectedRemainingMinutes)
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var request = new TransferValidationRequest
+        {
+            TicketId = Guid.NewGuid(),
+            PurchasedAt = now.AddMinutes(-elapsedMinutes),
+            ValidUntil = now.AddMinutes(expectedRemainingMinutes),
+            Status = TicketStatus.Active,
+            FirstRouteId = Guid.NewGuid(),
+            TargetRouteId = Guid.NewGuid(),
+            ValidationTime = now
+        };
+
+        // Act
+        var result = _validator.ValidateTransfer(request);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsValid);
+        Assert.True(result.IsFreeTransfer);
+        Assert.Equal(expectedRemainingMinutes, result.RemainingMinutes);
+    }
+
+    [Fact]
     public void ValidateTransfer_WithinTimeWindowAndDifferentRoute_ReturnsValidFreeTransfer()
     {
         // Arrange
@@ -144,4 +187,3 @@ public class TransferWindowValidatorTests
         Assert.Contains("повторн", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
-

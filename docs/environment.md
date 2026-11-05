@@ -134,3 +134,4 @@ reportgenerator `
   -reporttypes:Html
 ```
 Після генерації відкрийте `TestResults/CoverageReport/index.html` у браузері для перегляду відсотку покриття класів, методів та гілок (Line & Branch Coverage).
+

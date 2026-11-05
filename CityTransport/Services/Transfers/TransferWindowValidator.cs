@@ -4,71 +4,62 @@ namespace CityTransport.Services.Transfers;
 
 public class TransferWindowValidator : ITransferWindowValidator
 {
+    public const double DoubleTapThresholdMinutes = 2.0;
+
     public TransferValidationResult ValidateTransfer(TransferValidationRequest request)
     {
-        // 1. Check for clock anomaly / validation before purchase
-        if (request.ValidationTime < request.PurchasedAt)
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (IsClockAnomaly(request))
         {
-            return new TransferValidationResult
-            {
-                IsValid = false,
-                IsFreeTransfer = false,
-                RemainingMinutes = 0,
-                Message = "Некоректний час валідації (раніше моменту придбання)."
-            };
+            return TransferValidationResult.Failure("Некоректний час валідації (раніше моменту придбання).");
         }
 
-        // 2. Check ticket status
-        if (request.Status == TicketStatus.Expired)
+        if (IsTicketInactiveOrExpired(request))
         {
-            return new TransferValidationResult
-            {
-                IsValid = false,
-                IsFreeTransfer = false,
-                RemainingMinutes = 0,
-                Message = "Квиток прострочений або недійсний."
-            };
+            return TransferValidationResult.Failure("Квиток прострочений або недійсний.");
         }
 
-        // 3. Check if transfer window has expired
-        if (request.ValidationTime > request.ValidUntil)
+        if (IsTransferWindowExpired(request))
         {
-            return new TransferValidationResult
-            {
-                IsValid = false,
-                IsFreeTransfer = false,
-                RemainingMinutes = 0,
-                Message = "Термін дії вікна пересадки вичерпано."
-            };
+            return TransferValidationResult.Failure("Термін дії вікна пересадки вичерпано.");
         }
 
-        // 4. Double-tap detection on the same route within 2 minutes
-        if (request.LastValidationTime.HasValue && 
-            request.FirstRouteId.HasValue && 
-            request.FirstRouteId.Value == request.TargetRouteId)
+        if (IsDoubleTapOnSameRoute(request))
         {
-            var timeSinceLastValidation = request.ValidationTime - request.LastValidationTime.Value;
-            if (timeSinceLastValidation.TotalMinutes < 2.0)
-            {
-                return new TransferValidationResult
-                {
-                    IsValid = false,
-                    IsFreeTransfer = false,
-                    RemainingMinutes = (int)Math.Max(0, (request.ValidUntil - request.ValidationTime).TotalMinutes),
-                    Message = "Виявлено повторне прикладання квитка на тому ж маршруті."
-                };
-            }
+            var remaining = CalculateRemainingMinutes(request);
+            return TransferValidationResult.Failure("Виявлено повторне прикладання квитка на тому ж маршруті.", remaining);
         }
 
-        // 5. Successful transfer
-        var remainingMinutes = (int)Math.Ceiling((request.ValidUntil - request.ValidationTime).TotalMinutes);
+        var remainingMinutes = CalculateRemainingMinutes(request);
+        return TransferValidationResult.Success(remainingMinutes);
+    }
 
-        return new TransferValidationResult
+    private static bool IsClockAnomaly(TransferValidationRequest request) =>
+        request.ValidationTime < request.PurchasedAt;
+
+    private static bool IsTicketInactiveOrExpired(TransferValidationRequest request) =>
+        request.Status == TicketStatus.Expired;
+
+    private static bool IsTransferWindowExpired(TransferValidationRequest request) =>
+        request.ValidationTime > request.ValidUntil;
+
+    private static bool IsDoubleTapOnSameRoute(TransferValidationRequest request)
+    {
+        if (!request.LastValidationTime.HasValue || !request.FirstRouteId.HasValue)
         {
-            IsValid = true,
-            IsFreeTransfer = true,
-            RemainingMinutes = Math.Max(0, remainingMinutes),
-            Message = "Пересадка успішна (в межах діючого часового вікна)."
-        };
+            return false;
+        }
+
+        var isSameRoute = request.FirstRouteId.Value == request.TargetRouteId;
+        var isWithinThreshold = (request.ValidationTime - request.LastValidationTime.Value).TotalMinutes < DoubleTapThresholdMinutes;
+
+        return isSameRoute && isWithinThreshold;
+    }
+
+    private static int CalculateRemainingMinutes(TransferValidationRequest request)
+    {
+        var diff = (request.ValidUntil - request.ValidationTime).TotalMinutes;
+        return (int)Math.Max(0, Math.Ceiling(diff));
     }
 }

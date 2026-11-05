@@ -16,8 +16,30 @@ public class TransferValidationRequest
 
 public class TransferValidationResult
 {
-    public bool IsValid { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public int RemainingMinutes { get; set; }
-    public bool IsFreeTransfer { get; set; }
+    public bool IsValid { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public int RemainingMinutes { get; init; }
+    public bool IsFreeTransfer { get; init; }
+
+    public static TransferValidationResult Success(int remainingMinutes, string message = "Пересадка успішна (в межах діючого часового вікна).")
+    {
+        return new TransferValidationResult
+        {
+            IsValid = true,
+            IsFreeTransfer = true,
+            RemainingMinutes = Math.Max(0, remainingMinutes),
+            Message = message
+        };
+    }
+
+    public static TransferValidationResult Failure(string message, int remainingMinutes = 0)
+    {
+        return new TransferValidationResult
+        {
+            IsValid = false,
+            IsFreeTransfer = false,
+            RemainingMinutes = Math.Max(0, remainingMinutes),
+            Message = message
+        };
+    }
 }

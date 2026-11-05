@@ -144,3 +144,4 @@ public class TransferWindowValidatorTests
         Assert.Contains("повторн", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
+

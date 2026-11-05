@@ -4,3 +4,4 @@ public interface ITransferWindowValidator
 {
     TransferValidationResult ValidateTransfer(TransferValidationRequest request);
 }
+

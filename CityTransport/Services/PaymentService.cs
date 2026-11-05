@@ -79,10 +79,10 @@ public class PaymentService : IPaymentService
         var ticketId = Guid.NewGuid();
         var ticket = new Ticket
         {
-            Id = Guid.NewGuid(),
+            Id = ticketId,
             UserId = order.UserId,
             OrderId = order.Id,
-            QrCodePayload = _qrCodeGenerator.GenerateEncryptedPayload(Guid.NewGuid().ToString()),
+            QrCodePayload = _qrCodeGenerator.GenerateEncryptedPayload(ticketId.ToString()),
             Status = TicketStatus.Active,
             PurchasedAt = DateTime.UtcNow,
             ValidUntil = DateTime.UtcNow.AddMinutes(durationMinutes)

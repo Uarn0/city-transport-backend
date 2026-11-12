@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using CityTransport.Data;
 using CityTransport.Entities;
 using CityTransport.Services;
+using CityTransport.Services.Payments;
 using CityTransport.Services.Transfers;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -48,8 +49,10 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<ITariffService, TariffService>();
 builder.Services.AddScoped<ITransferWindowValidator, TransferWindowValidator>();
+builder.Services.AddScoped<IPaymentGateway, MonobankPaymentGateway>();
 
 builder.Services.Configure<CryptoSettings>(builder.Configuration.GetSection("CryptoSettings"));
+builder.Services.AddTransient<IQRCodeGeneratorService, QRCodeGeneratorService>();
 builder.Services.AddTransient<QRCodeGeneratorService>();
 
 var app = builder.Build();

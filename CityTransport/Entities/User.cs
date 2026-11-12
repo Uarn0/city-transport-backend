@@ -1,4 +1,4 @@
-﻿namespace CityTransport.Entities;
+namespace CityTransport.Entities;
 
 public class User
 {

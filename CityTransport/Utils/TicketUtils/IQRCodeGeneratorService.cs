@@ -17,3 +17,4 @@ public interface IQRCodeGeneratorService
     /// </summary>
     bool TryDecryptPayload(string encryptedPayload, out string? ticketGuid, out DateTime generatedAt);
 }
+

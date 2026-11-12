@@ -12,3 +12,4 @@ public class MonobankPaymentGateway : IPaymentGateway
         return Task.FromResult(paymentUrl);
     }
 }
+

@@ -1,5 +1,6 @@
 using CityTransport.DTOs.Payments;
 using CityTransport.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CityTransport.Controllers;
@@ -17,7 +18,11 @@ public class PaymentsController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Публічний вебхук від банку (Monobank) для підтвердження оплати замовлення
+    /// </summary>
     [HttpPost("webhook/monobank")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(PaymentWebhookResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

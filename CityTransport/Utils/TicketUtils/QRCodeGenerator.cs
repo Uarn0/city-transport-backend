@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -7,7 +7,7 @@ using QRCoder;
 
 namespace CityTransport.Utils.TicketUtils
 {
-    public class QRCodeGeneratorService
+    public class QRCodeGeneratorService : IQRCodeGeneratorService
     {
         // Для AES-256 довжина ключа повинна бути рівно 32 байти (символи)
         private readonly byte[] _encryptionKey;

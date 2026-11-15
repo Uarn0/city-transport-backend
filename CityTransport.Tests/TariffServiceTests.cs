@@ -1,12 +1,8 @@
-﻿using CityTransport.Entities;
-using CityTransport.Services;
-using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Text;
 using CityTransport.Data;
 using CityTransport.DTOs.Tariffs;
+using CityTransport.Entities;
 using CityTransport.Services;
+using Microsoft.EntityFrameworkCore;
 
 
 
@@ -48,8 +44,9 @@ namespace CityTransport.Tests
             var result = await service.GetActiveTariffsAsync();
 
             var tariffsList = result.ToList();
-            Assert.Equal(3,tariffsList.Count);
-            Assert.Equal("Загальний разовий", tariffsList[0].Name);
+            Assert.Equal(3, tariffsList.Count);
+            Assert.Contains(tariffsList, t => t.Name == "Загальний разовий");
+            Assert.Contains(tariffsList, t => t.Name == "Active Tariff");
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using CityTransport.Data;
 using CityTransport.Entities;
 using CityTransport.Services;
+using CityTransport.Services.Transfers;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -46,6 +47,7 @@ builder.Services.AddScoped<IPurchaseService, PurchaseService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<ITariffService, TariffService>();
+builder.Services.AddScoped<ITransferWindowValidator, TransferWindowValidator>();
 
 builder.Services.Configure<CryptoSettings>(builder.Configuration.GetSection("CryptoSettings"));
 builder.Services.AddTransient<QRCodeGeneratorService>();

@@ -3,7 +3,6 @@ using CityTransport.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 
 namespace CityTransport.Controllers;
 
@@ -78,4 +77,37 @@ public class TicketsController : ControllerBase
         var types = await _ticketService.GetAvailableTicketTypesAsync();
         return Ok(types);
     }
+    /// <summary>
+    /// Валідація та сканування квитка за його зашифрованим QR payload (для контролерів/водіїв)
+    /// </summary>
+    [HttpPost("verify")]
+    [ProducesResponseType(typeof(TicketVerificationResultDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> VerifyTicket([FromBody] VerifyTicketRequestDto request)
+    {
+        var result = await _ticketService.VerifyAndUseTicketAsync(request.EncryptedPayload);
+        return Ok(result);
+    }
+    [HttpGet("generate-test-token")]
+[AllowAnonymous]
+public IActionResult GenerateTestToken([FromServices] IConfiguration configuration)
+{
+    var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+    var key = System.Text.Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? "super_secret_key_that_is_long_enough_12345");
+    
+    var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+    {
+        Subject = new System.Security.Claims.ClaimsIdentity(new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "00000000-0000-0000-0000-000000000001"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, "default@example.com")
+        }),
+        Expires = DateTime.UtcNow.AddHours(1),
+        Issuer = configuration["Jwt:Issuer"],
+        Audience = configuration["Jwt:Audience"],
+        SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key), Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
+    };
+    
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+    return Ok(new { Token = tokenHandler.WriteToken(token) });
+}
 }

@@ -57,3 +57,23 @@ jobs:
     # 5. Запускаємо юніт-тести
     - name: Run unit tests
       run: dotnet test --no-build --verbosity normal
+
+      # 6. Генеруємо візуальний звіт та таблицю для GitHub Step Summary
+    - name: Generate Coverage Report
+      uses: danielpalme/ReportGenerator-GitHub-Action@5.4.1
+      with:
+        reports: './TestResults/**/coverage.cobertura.xml'
+        targetdir: './CoverageReport'
+        reporttypes: 'HtmlInline_AzurePipelines;MarkdownSummaryGithub'
+
+    # 7. Виводимо зведення покриття прямо на сторінку запуску в GitHub Actions
+    - name: Publish Coverage Summary
+      run: cat ./CoverageReport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+
+    # 8. Зберігаємо HTML-звіт як артефакт для завантаження
+    - name: Upload Coverage Report Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: code-coverage-report
+        path: ./CoverageReport

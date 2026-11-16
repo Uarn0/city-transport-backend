@@ -55,8 +55,11 @@ jobs:
         ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=CityTransportDbDev;Username=postgres;Password=your_password"
 
     # 5. Запускаємо юніт-тести
-    - name: Run unit tests
-      run: dotnet test --no-build --verbosity normal
+    - name: Run tests with coverage
+      run: >
+        dotnet test --no-build --verbosity normal
+        --collect:"XPlat Code Coverage"
+        --results-directory ./TestResults
 
       # 6. Генеруємо візуальний звіт та таблицю для GitHub Step Summary
     - name: Generate Coverage Report

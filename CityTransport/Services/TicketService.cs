@@ -9,10 +9,10 @@ namespace CityTransport.Services;
 public class TicketService : ITicketService
 {
     private readonly AppDbContext _dbContext;
-    private readonly QRCodeGeneratorService _qrCodeGeneratorService;
+    private readonly IQRCodeGeneratorService _qrCodeGeneratorService;
     private readonly ILogger<TicketService> _logger;
 
-    public TicketService(AppDbContext dbContext, QRCodeGeneratorService qrCodeGeneratorService, ILogger<TicketService> logger)
+    public TicketService(AppDbContext dbContext, IQRCodeGeneratorService qrCodeGeneratorService, ILogger<TicketService> logger)
     {
         _dbContext = dbContext;
         _qrCodeGeneratorService = qrCodeGeneratorService;

@@ -11,12 +11,12 @@ public class PaymentService : IPaymentService
 {
     private readonly AppDbContext _dbContext;
     private readonly ILogger<PaymentService> _logger;
-    private readonly QRCodeGeneratorService _qrCodeGenerator;
+    private readonly IQRCodeGeneratorService _qrCodeGenerator;
 
     public PaymentService(
         AppDbContext dbContext, 
         ILogger<PaymentService> logger, 
-        QRCodeGeneratorService qrCodeGenerator)
+        IQRCodeGeneratorService qrCodeGenerator)
     {
         _dbContext = dbContext;
         _logger = logger;

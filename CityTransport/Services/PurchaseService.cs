@@ -1,6 +1,7 @@
 using CityTransport.Data;
 using CityTransport.DTOs.Purchases;
 using CityTransport.Entities;
+using CityTransport.Services.Payments;
 using Microsoft.EntityFrameworkCore;
 
 namespace CityTransport.Services;
@@ -8,10 +9,16 @@ namespace CityTransport.Services;
 public class PurchaseService : IPurchaseService
 {
     private readonly AppDbContext _context;
+    private readonly IPaymentGateway _paymentGateway;
 
-    public PurchaseService(AppDbContext context)
+    public PurchaseService(AppDbContext context, IPaymentGateway paymentGateway)
     {
         _context = context;
+        _paymentGateway = paymentGateway;
+    }
+
+    public PurchaseService(AppDbContext context) : this(context, new MonobankPaymentGateway())
+    {
     }
 
     public async Task<CreatePurchaseResponseDto> CreatePurchaseAsync(CreatePurchaseRequestDto request, Guid userId)
@@ -60,8 +67,8 @@ public class PurchaseService : IPurchaseService
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
 
-        //paymentmock URL
-        var paymentUrl = $"https://checkout.sandbox.payment.com/pay/{order.Id}";
+        // Generate payment URL via payment gateway dependency
+        var paymentUrl = await _paymentGateway.CreatePaymentSessionAsync(order);
 
         //ResponseDto
         return new CreatePurchaseResponseDto

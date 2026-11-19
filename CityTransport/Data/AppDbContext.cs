@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Tariff> Tariffs => Set<Tariff>();
     public DbSet<Route> Routes => Set<Route>();
+    public DbSet<Stop> Stops => Set<Stop>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
@@ -23,6 +24,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Tariff>()
             .HasMany(t => t.Routes)
             .WithMany(r => r.Tariffs);
+
+        // configure one-to-many: Route -> Stops
+        modelBuilder.Entity<Stop>()
+            .HasOne(s => s.Route)
+            .WithMany(r => r.Stops)
+            .HasForeignKey(s => s.RouteId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // configure relationships for Order
         modelBuilder.Entity<Order>()

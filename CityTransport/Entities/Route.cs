@@ -8,4 +8,7 @@ public class Route
 
     // many to many relationship with Tariff
     public ICollection<Tariff> Tariffs { get; set; } = new List<Tariff>();
+
+    public int EstimatedDurationMinutes { get; set; }
+    public ICollection<Stop> Stops { get; set; } = new List<Stop>();
 }

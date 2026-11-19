@@ -1,0 +1,390 @@
+@page
+@model CityTransport.Pages.MapModel
+@{
+    ViewData["Title"] = "Карта маршрутів";
+}
+
+<style>
+    #map {
+        height: 70vh;
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+    .route-legend { max-height: 300px; overflow-y: auto; }
+    .stop-badge { font-size: 0.75rem; }
+    #plan-panel, #search-panel { display: none; }
+    .mode-active { background-color: #0d6efd !important; color: white !important; }
+</style>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<div class="container-fluid px-3">
+    <h2 class="mb-3">🗺 Карта маршрутів CityTransport</h2>
+
+    <!-- Mode buttons -->
+    <div class="btn-group mb-3" role="group">
+        <button id="btn-view" class="btn btn-outline-primary mode-active" onclick="setMode('view')">👁 Перегляд</button>
+        <button id="btn-plan" class="btn btn-outline-success" onclick="setMode('plan')">✏️ Планування</button>
+        <button id="btn-search" class="btn btn-outline-info" onclick="setMode('search')">🔍 Пошук маршруту</button>
+    </div>
+
+    <div class="row">
+        <!-- Map -->
+        <div class="col-md-9">
+            <div id="map"></div>
+        </div>
+
+        <!-- Side panels -->
+        <div class="col-md-3">
+            <!-- View panel: route legend -->
+            <div id="view-panel">
+                <h5>Маршрути</h5>
+                <div id="route-legend" class="route-legend">
+                    <p class="text-muted">Завантаження...</p>
+                </div>
+            </div>
+
+            <!-- Plan panel -->
+            <div id="plan-panel">
+                <h5>✏️ Новий маршрут</h5>
+                <div class="mb-2">
+                    <label class="form-label">Номер маршруту</label>
+                    <input id="plan-number" type="text" class="form-control" placeholder="напр. 42" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Назва (звідки – куди)</label>
+                    <input id="plan-name" type="text" class="form-control" placeholder="напр. Центр – Аеропорт" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Орієнт. час (хв)</label>
+                    <input id="plan-duration" type="number" class="form-control" value="30" min="1" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label text-muted small">JWT токен (Carrier / Admin)</label>
+                    <input id="plan-token" type="password" class="form-control form-control-sm" placeholder="Bearer токен (якщо є)..." />
+                </div>
+                <p class="text-muted small">Натискайте на карту, щоб додавати зупинки</p>
+                <div id="plan-stops-list" class="mb-2 small"></div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-warning btn-sm" onclick="undoLastStop()">↩ Видалити останню</button>
+                    <button class="btn btn-success" onclick="saveRoute()">💾 Зберегти маршрут</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearPlan()">🗑 Очистити</button>
+                </div>
+                <div id="plan-message" class="mt-2"></div>
+            </div>
+
+            <!-- Search panel -->
+            <div id="search-panel">
+                <h5>🔍 Пошук маршруту</h5>
+                <p class="text-muted small">Натисніть на карті точку відправлення, потім точку призначення</p>
+                <div class="mb-2">
+                    <label class="form-label text-success">📍 Відправлення</label>
+                    <input id="search-from-display" type="text" class="form-control form-control-sm" readonly placeholder="Оберіть на карті..." />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label text-danger">🏁 Призначення</label>
+                    <input id="search-to-display" type="text" class="form-control form-control-sm" readonly placeholder="Оберіть на карті..." />
+                </div>
+                <button class="btn btn-info w-100 mb-2" onclick="performSearch()">🔍 Знайти маршрути</button>
+                <div id="search-results"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // ── State ──────────────────────────────────────────────
+    const ROUTE_COLORS = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999'];
+    let map, currentMode = 'view';
+    let routeLayers = [];
+    let planMarkers = [], planPolyline = null;
+    let searchFromMarker = null, searchToMarker = null;
+    let searchFromLatLng = null, searchToLatLng = null;
+    let searchResultLayers = [];
+    let searchStep = 0; // 0=pick from, 1=pick to
+
+    // ── Init ──────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        map = L.map('map').setView([49.842, 24.031], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        map.on('click', onMapClick);
+        const savedToken = localStorage.getItem('jwt_token');
+        if (savedToken && document.getElementById('plan-token')) {
+            document.getElementById('plan-token').value = savedToken;
+        }
+        loadAllRoutes();
+    });
+
+    // ── Mode switching ────────────────────────────────────
+    function setMode(mode) {
+        currentMode = mode;
+        document.getElementById('view-panel').style.display = mode === 'view' ? '' : 'none';
+        document.getElementById('plan-panel').style.display = mode === 'plan' ? '' : 'none';
+        document.getElementById('search-panel').style.display = mode === 'search' ? '' : 'none';
+        ['view','plan','search'].forEach(m => {
+            const btn = document.getElementById('btn-' + m);
+            btn.classList.toggle('mode-active', m === mode);
+        });
+
+        if (mode === 'view') {
+            clearSearchMarkers();
+            clearPlan();
+            showRouteLines();
+        } else if (mode === 'plan') {
+            clearSearchMarkers();
+            hideRouteLines();
+        } else if (mode === 'search') {
+            clearPlan();
+            showRouteLines();
+            searchStep = 0;
+            searchFromLatLng = null;
+            searchToLatLng = null;
+        }
+    }
+
+    // ── Map click handler ─────────────────────────────────
+    function onMapClick(e) {
+        if (currentMode === 'plan') {
+            addPlanStop(e.latlng);
+        } else if (currentMode === 'search') {
+            handleSearchClick(e.latlng);
+        }
+    }
+
+    // ── VIEW MODE: load & draw routes ─────────────────────
+    async function loadAllRoutes() {
+        try {
+            const resp = await fetch('/api/v1/routes');
+            if (!resp.ok) throw new Error('API error ' + resp.status);
+            const routes = await resp.json();
+            drawRoutes(routes);
+            buildLegend(routes);
+        } catch (err) {
+            document.getElementById('route-legend').innerHTML =
+                '<p class="text-warning">Маршрути недоступні (API не запущено або немає даних)</p>';
+        }
+    }
+
+    function drawRoutes(routes) {
+        clearRouteLayers();
+        routes.forEach((route, idx) => {
+            if (!route.stops || route.stops.length === 0) return;
+            const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
+            const latlngs = route.stops.map(s => [s.latitude, s.longitude]);
+
+            const poly = L.polyline(latlngs, { color, weight: 4, opacity: 0.8 }).addTo(map);
+            poly.bindPopup(`<b>Маршрут №${route.number}</b><br>${route.name}<br>⏱ ~${route.estimatedDurationMinutes} хв`);
+            routeLayers.push(poly);
+
+            route.stops.forEach((stop, si) => {
+                const isFirst = si === 0, isLast = si === route.stops.length - 1;
+                const icon = isFirst || isLast
+                    ? L.circleMarker([stop.latitude, stop.longitude], { radius: 9, color, fillColor: color, fillOpacity: 1, weight: 2 })
+                    : L.circleMarker([stop.latitude, stop.longitude], { radius: 6, color, fillColor: '#fff', fillOpacity: 1, weight: 2 });
+                icon.bindPopup(`<b>${stop.name}</b><br>Маршрут №${route.number}<br>Зупинка ${stop.order}`);
+                icon.addTo(map);
+                routeLayers.push(icon);
+            });
+        });
+    }
+
+    function buildLegend(routes) {
+        const el = document.getElementById('route-legend');
+        if (!routes.length) { el.innerHTML = '<p class="text-muted">Маршрутів ще немає</p>'; return; }
+        el.innerHTML = routes.map((r, i) => `
+            <div class="d-flex align-items-center mb-1">
+                <span style="width:16px;height:16px;background:${ROUTE_COLORS[i % ROUTE_COLORS.length]};border-radius:3px;display:inline-block;margin-right:6px;flex-shrink:0"></span>
+                <span class="small"><b>№${r.number}</b> ${r.name} <span class="badge bg-secondary stop-badge">${r.stops.length} зуп.</span></span>
+            </div>`).join('');
+    }
+
+    function clearRouteLayers() {
+        routeLayers.forEach(l => map.removeLayer(l));
+        routeLayers = [];
+    }
+    function hideRouteLines() { routeLayers.forEach(l => map.removeLayer(l)); }
+    function showRouteLines() { routeLayers.forEach(l => l.addTo(map)); }
+
+    // ── PLAN MODE ─────────────────────────────────────────
+    function addPlanStop(latlng) {
+        const order = planMarkers.length + 1;
+        const marker = L.marker(latlng, { draggable: true }).addTo(map);
+        marker.bindPopup(`Зупинка ${order}`).openPopup();
+        marker.on('dragend', redrawPlanPolyline);
+        planMarkers.push(marker);
+        redrawPlanPolyline();
+        updatePlanStopsList();
+    }
+
+    function undoLastStop() {
+        if (!planMarkers.length) return;
+        const last = planMarkers.pop();
+        map.removeLayer(last);
+        redrawPlanPolyline();
+        updatePlanStopsList();
+    }
+
+    function redrawPlanPolyline() {
+        if (planPolyline) { map.removeLayer(planPolyline); planPolyline = null; }
+        if (planMarkers.length > 1) {
+            planPolyline = L.polyline(planMarkers.map(m => m.getLatLng()), { color: '#28a745', weight: 4, dashArray: '8,4' }).addTo(map);
+        }
+    }
+
+    function updatePlanStopsList() {
+        const el = document.getElementById('plan-stops-list');
+        if (!planMarkers.length) { el.innerHTML = '<span class="text-muted">Зупинок ще немає</span>'; return; }
+        el.innerHTML = planMarkers.map((m, i) => {
+            const ll = m.getLatLng();
+            return `<div>${i+1}. ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}</div>`;
+        }).join('');
+    }
+
+    function clearPlan() {
+        planMarkers.forEach(m => map.removeLayer(m));
+        planMarkers = [];
+        if (planPolyline) { map.removeLayer(planPolyline); planPolyline = null; }
+        updatePlanStopsList();
+        document.getElementById('plan-message').innerHTML = '';
+    }
+
+    async function saveRoute() {
+        const number = document.getElementById('plan-number').value.trim();
+        const name = document.getElementById('plan-name').value.trim();
+        const duration = parseInt(document.getElementById('plan-duration').value) || 30;
+        const msgEl = document.getElementById('plan-message');
+
+        if (!number || !name) { msgEl.innerHTML = '<div class="alert alert-warning p-2">Введіть номер та назву маршруту</div>'; return; }
+        if (planMarkers.length < 2) { msgEl.innerHTML = '<div class="alert alert-warning p-2">Додайте принаймні 2 зупинки</div>'; return; }
+
+        const payload = {
+            number, name,
+            estimatedDurationMinutes: duration,
+            stops: planMarkers.map((m, i) => {
+                const ll = m.getLatLng();
+                return { name: `Зупинка ${i + 1}`, latitude: ll.lat, longitude: ll.lng, order: i + 1 };
+            })
+        };
+
+        try {
+            const inputToken = document.getElementById('plan-token')?.value?.trim();
+            const token = inputToken || localStorage.getItem('jwt_token') || '';
+            if (inputToken) localStorage.setItem('jwt_token', inputToken);
+
+            const resp = await fetch('/api/v1/routes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                body: JSON.stringify(payload)
+            });
+
+            if (resp.status === 401 || resp.status === 403) {
+                msgEl.innerHTML = '<div class="alert alert-danger p-2">❌ Потрібна роль Admin/Carrier для збереження маршруту. Введіть валідний JWT токен вище.</div>';
+                return;
+            }
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+            const saved = await resp.json();
+            msgEl.innerHTML = `<div class="alert alert-success p-2">✅ Маршрут №${saved.number} збережено!</div>`;
+            clearPlan();
+            loadAllRoutes(); // refresh
+        } catch (err) {
+            msgEl.innerHTML = `<div class="alert alert-danger p-2">❌ Помилка: ${err.message}</div>`;
+        }
+    }
+
+    // ── SEARCH MODE ───────────────────────────────────────
+    function handleSearchClick(latlng) {
+        if (searchStep === 0) {
+            if (searchFromMarker) map.removeLayer(searchFromMarker);
+            searchFromMarker = L.marker(latlng, { icon: greenIcon() }).addTo(map).bindPopup('📍 Відправлення').openPopup();
+            searchFromLatLng = latlng;
+            document.getElementById('search-from-display').value = `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;
+            searchStep = 1;
+        } else {
+            if (searchToMarker) map.removeLayer(searchToMarker);
+            searchToMarker = L.marker(latlng, { icon: redIcon() }).addTo(map).bindPopup('🏁 Призначення').openPopup();
+            searchToLatLng = latlng;
+            document.getElementById('search-to-display').value = `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;
+            searchStep = 0;
+        }
+    }
+
+    async function performSearch() {
+        const resultsEl = document.getElementById('search-results');
+        if (!searchFromLatLng || !searchToLatLng) {
+            resultsEl.innerHTML = '<div class="alert alert-warning p-2">Оберіть обидві точки на карті</div>';
+            return;
+        }
+
+        clearSearchResultLayers();
+        resultsEl.innerHTML = '<p class="text-muted">Пошук...</p>';
+
+        try {
+            const url = `/api/v1/routes/search?fromLat=${searchFromLatLng.lat}&fromLng=${searchFromLatLng.lng}&toLat=${searchToLatLng.lat}&toLng=${searchToLatLng.lng}`;
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('API error');
+            const results = await resp.json();
+
+            if (!results.length) {
+                resultsEl.innerHTML = '<div class="alert alert-info p-2">Маршрути не знайдено</div>';
+                return;
+            }
+
+            resultsEl.innerHTML = results.map((r, i) => `
+                <div class="card mb-2 p-2" style="border-left: 4px solid ${ROUTE_COLORS[i % ROUTE_COLORS.length]}">
+                    <b>№${r.routeNumber}</b> ${r.routeName}<br>
+                    <small class="text-muted">
+                        Від: ${r.nearestFromStop?.name || '?'} → До: ${r.nearestToStop?.name || '?'}<br>
+                        ~${Math.round(r.distanceMeters)}м до зупинки
+                    </small>
+                </div>`).join('');
+
+            // Highlight matching routes on map
+            const allRoutesResp = await fetch('/api/v1/routes');
+            if (allRoutesResp.ok) {
+                const allRoutes = await allRoutesResp.json();
+                const matchIds = new Set(results.map(r => r.routeId));
+                const matchRoutes = allRoutes.filter(r => matchIds.has(r.id));
+                matchRoutes.forEach((route, i) => {
+                    if (!route.stops.length) return;
+                    const latlngs = route.stops.map(s => [s.latitude, s.longitude]);
+                    const hl = L.polyline(latlngs, { color: ROUTE_COLORS[i % ROUTE_COLORS.length], weight: 7, opacity: 0.9 }).addTo(map);
+                    searchResultLayers.push(hl);
+                });
+            }
+        } catch (err) {
+            resultsEl.innerHTML = `<div class="alert alert-danger p-2">Помилка: ${err.message}</div>`;
+        }
+    }
+
+    function clearSearchMarkers() {
+        if (searchFromMarker) { map.removeLayer(searchFromMarker); searchFromMarker = null; }
+        if (searchToMarker) { map.removeLayer(searchToMarker); searchToMarker = null; }
+        clearSearchResultLayers();
+        searchFromLatLng = null; searchToLatLng = null;
+        document.getElementById('search-from-display').value = '';
+        document.getElementById('search-to-display').value = '';
+        document.getElementById('search-results').innerHTML = '';
+    }
+
+    function clearSearchResultLayers() {
+        searchResultLayers.forEach(l => map.removeLayer(l));
+        searchResultLayers = [];
+    }
+
+    // ── Custom icons ──────────────────────────────────────
+    function greenIcon() {
+        return L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize: [41,41] });
+    }
+    function redIcon() {
+        return L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize: [41,41] });
+    }
+</script>
+}

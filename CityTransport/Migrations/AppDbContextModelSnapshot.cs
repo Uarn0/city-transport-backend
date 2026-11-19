@@ -91,6 +91,30 @@ namespace CityTransport.Migrations
                         });
                 });
 
+            modelBuilder.Entity("CityTransport.Entities.RouteStop", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RouteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StopId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StopId");
+
+                    b.HasIndex("RouteId", "Order");
+
+                    b.ToTable("RouteStops");
+                });
+
             modelBuilder.Entity("CityTransport.Entities.Stop", b =>
                 {
                     b.Property<Guid>("Id")
@@ -107,15 +131,15 @@ namespace CityTransport.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
+                    b.Property<long?>("OsmId")
+                        .HasColumnType("bigint");
 
-                    b.Property<Guid>("RouteId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("TransportType")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RouteId");
+                    b.HasIndex("OsmId");
 
                     b.ToTable("Stops");
                 });
@@ -299,15 +323,23 @@ namespace CityTransport.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("CityTransport.Entities.Stop", b =>
+            modelBuilder.Entity("CityTransport.Entities.RouteStop", b =>
                 {
                     b.HasOne("CityTransport.Entities.Route", "Route")
-                        .WithMany("Stops")
+                        .WithMany("RouteStops")
                         .HasForeignKey("RouteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("CityTransport.Entities.Stop", "Stop")
+                        .WithMany("RouteStops")
+                        .HasForeignKey("StopId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Route");
+
+                    b.Navigation("Stop");
                 });
 
             modelBuilder.Entity("CityTransport.Entities.Ticket", b =>
@@ -364,7 +396,12 @@ namespace CityTransport.Migrations
 
             modelBuilder.Entity("CityTransport.Entities.Route", b =>
                 {
-                    b.Navigation("Stops");
+                    b.Navigation("RouteStops");
+                });
+
+            modelBuilder.Entity("CityTransport.Entities.Stop", b =>
+                {
+                    b.Navigation("RouteStops");
                 });
 
             modelBuilder.Entity("CityTransport.Entities.User", b =>

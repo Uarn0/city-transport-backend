@@ -18,7 +18,8 @@ public class RouteService : IRouteService
     public async Task<IEnumerable<RouteWithStopsDto>> GetAllRoutesAsync()
     {
         var routes = await _context.Routes
-            .Include(r => r.Stops.OrderBy(s => s.Order))
+            .Include(r => r.RouteStops.OrderBy(rs => rs.Order))
+                .ThenInclude(rs => rs.Stop)
             .ToListAsync();
 
         return routes.Select(MapToDto);
@@ -27,7 +28,8 @@ public class RouteService : IRouteService
     public async Task<RouteWithStopsDto?> GetRouteByIdAsync(Guid id)
     {
         var route = await _context.Routes
-            .Include(r => r.Stops.OrderBy(s => s.Order))
+            .Include(r => r.RouteStops.OrderBy(rs => rs.Order))
+                .ThenInclude(rs => rs.Stop)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         return route == null ? null : MapToDto(route);
@@ -39,15 +41,68 @@ public class RouteService : IRouteService
         {
             Number = dto.Number,
             Name = dto.Name,
-            EstimatedDurationMinutes = dto.EstimatedDurationMinutes,
-            Stops = dto.Stops.Select((s, i) => new Stop
-            {
-                Name = s.Name,
-                Latitude = s.Latitude,
-                Longitude = s.Longitude,
-                Order = s.Order > 0 ? s.Order : i + 1
-            }).ToList()
+            EstimatedDurationMinutes = dto.EstimatedDurationMinutes
         };
+
+        var order = 1;
+        foreach (var s in dto.Stops)
+        {
+            Stop stop;
+
+            if (s.StopId.HasValue && s.StopId.Value != Guid.Empty)
+            {
+                var existingStop = await _context.Stops.FindAsync(s.StopId.Value);
+                if (existingStop != null)
+                {
+                    stop = existingStop;
+                }
+                else
+                {
+                    stop = new Stop
+                    {
+                        Id = s.StopId.Value,
+                        Name = s.Name,
+                        Latitude = s.Latitude,
+                        Longitude = s.Longitude,
+                        OsmId = s.OsmId,
+                        TransportType = s.TransportType
+                    };
+                    _context.Stops.Add(stop);
+                }
+            }
+            else
+            {
+                var existingStop = await _context.Stops.FirstOrDefaultAsync(st =>
+                    (s.OsmId != null && st.OsmId == s.OsmId) ||
+                    (Math.Abs(st.Latitude - s.Latitude) < 0.0001 && Math.Abs(st.Longitude - s.Longitude) < 0.0001));
+
+                if (existingStop != null)
+                {
+                    stop = existingStop;
+                }
+                else
+                {
+                    stop = new Stop
+                    {
+                        Name = string.IsNullOrWhiteSpace(s.Name) ? $"Зупинка {order}" : s.Name,
+                        Latitude = s.Latitude,
+                        Longitude = s.Longitude,
+                        OsmId = s.OsmId,
+                        TransportType = s.TransportType
+                    };
+                    _context.Stops.Add(stop);
+                }
+            }
+
+            var routeStop = new RouteStop
+            {
+                Route = route,
+                Stop = stop,
+                Order = s.Order > 0 ? s.Order : order++
+            };
+
+            route.RouteStops.Add(routeStop);
+        }
 
         _context.Routes.Add(route);
         await _context.SaveChangesAsync();
@@ -58,44 +113,92 @@ public class RouteService : IRouteService
     public async Task<RouteWithStopsDto?> UpdateRouteStopsAsync(Guid id, UpdateRouteStopsDto dto)
     {
         var route = await _context.Routes
-            .Include(r => r.Stops)
+            .Include(r => r.RouteStops)
+                .ThenInclude(rs => rs.Stop)
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (route == null) return null;
 
         route.EstimatedDurationMinutes = dto.EstimatedDurationMinutes;
 
-        // Remove existing stops
-        var existingStops = route.Stops.ToList();
-        _context.Stops.RemoveRange(existingStops);
+        // Remove existing route stops
+        var existingRouteStops = route.RouteStops.ToList();
+        _context.RouteStops.RemoveRange(existingRouteStops);
 
-        // Add new stops directly to DbContext
-        var newStops = new List<Stop>();
+        var newRouteStops = new List<RouteStop>();
         var order = 1;
+
         foreach (var s in dto.Stops)
         {
-            var stop = new Stop
+            Stop stop;
+            if (s.StopId.HasValue && s.StopId.Value != Guid.Empty)
             {
-                Id = Guid.NewGuid(),
+                var existingStop = await _context.Stops.FindAsync(s.StopId.Value);
+                if (existingStop != null)
+                {
+                    stop = existingStop;
+                }
+                else
+                {
+                    stop = new Stop
+                    {
+                        Id = s.StopId.Value,
+                        Name = s.Name,
+                        Latitude = s.Latitude,
+                        Longitude = s.Longitude,
+                        OsmId = s.OsmId,
+                        TransportType = s.TransportType
+                    };
+                    _context.Stops.Add(stop);
+                }
+            }
+            else
+            {
+                var existingStop = await _context.Stops.FirstOrDefaultAsync(st =>
+                    (s.OsmId != null && st.OsmId == s.OsmId) ||
+                    (Math.Abs(st.Latitude - s.Latitude) < 0.0001 && Math.Abs(st.Longitude - s.Longitude) < 0.0001));
+
+                if (existingStop != null)
+                {
+                    stop = existingStop;
+                }
+                else
+                {
+                    stop = new Stop
+                    {
+                        Name = string.IsNullOrWhiteSpace(s.Name) ? $"Зупинка {order}" : s.Name,
+                        Latitude = s.Latitude,
+                        Longitude = s.Longitude,
+                        OsmId = s.OsmId,
+                        TransportType = s.TransportType
+                    };
+                    _context.Stops.Add(stop);
+                }
+            }
+
+            var routeStop = new RouteStop
+            {
                 RouteId = route.Id,
-                Name = s.Name,
-                Latitude = s.Latitude,
-                Longitude = s.Longitude,
+                Stop = stop,
                 Order = s.Order > 0 ? s.Order : order++
             };
-            newStops.Add(stop);
-            _context.Stops.Add(stop);
+
+            newRouteStops.Add(routeStop);
+            _context.RouteStops.Add(routeStop);
         }
 
         await _context.SaveChangesAsync();
 
-        route.Stops = newStops;
+        route.RouteStops = newRouteStops;
         return MapToDto(route);
     }
 
     public async Task<bool> DeleteRouteAsync(Guid id)
     {
-        var route = await _context.Routes.FindAsync(id);
+        var route = await _context.Routes
+            .Include(r => r.RouteStops)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
         if (route == null) return false;
 
         _context.Routes.Remove(route);
@@ -107,36 +210,37 @@ public class RouteService : IRouteService
         double fromLat, double fromLng, double toLat, double toLng)
     {
         var routes = await _context.Routes
-            .Include(r => r.Stops.OrderBy(s => s.Order))
-            .Where(r => r.Stops.Any())
+            .Include(r => r.RouteStops.OrderBy(rs => rs.Order))
+                .ThenInclude(rs => rs.Stop)
+            .Where(r => r.RouteStops.Any())
             .ToListAsync();
 
         var results = new List<RouteSearchResultDto>();
 
         foreach (var route in routes)
         {
-            if (!route.Stops.Any()) continue;
+            if (!route.RouteStops.Any()) continue;
 
-            var nearestFrom = route.Stops
-                .OrderBy(s => HaversineDistance(fromLat, fromLng, s.Latitude, s.Longitude))
+            var nearestFrom = route.RouteStops
+                .OrderBy(rs => HaversineDistance(fromLat, fromLng, rs.Stop.Latitude, rs.Stop.Longitude))
                 .First();
 
-            var nearestTo = route.Stops
-                .OrderBy(s => HaversineDistance(toLat, toLng, s.Latitude, s.Longitude))
+            var nearestTo = route.RouteStops
+                .OrderBy(rs => HaversineDistance(toLat, toLng, rs.Stop.Latitude, rs.Stop.Longitude))
                 .First();
 
             // Only include if stops are in proper direction (from order < to order)
             if (nearestFrom.Order >= nearestTo.Order) continue;
 
-            var distanceFromUser = HaversineDistance(fromLat, fromLng, nearestFrom.Latitude, nearestFrom.Longitude);
+            var distanceFromUser = HaversineDistance(fromLat, fromLng, nearestFrom.Stop.Latitude, nearestFrom.Stop.Longitude);
 
             results.Add(new RouteSearchResultDto
             {
                 RouteId = route.Id,
                 RouteNumber = route.Number,
                 RouteName = route.Name,
-                NearestFromStop = MapStopToDto(nearestFrom),
-                NearestToStop = MapStopToDto(nearestTo),
+                NearestFromStop = MapStopToDto(nearestFrom.Stop, nearestFrom.Order),
+                NearestToStop = MapStopToDto(nearestTo.Stop, nearestTo.Order),
                 DistanceMeters = distanceFromUser
             });
         }
@@ -144,7 +248,6 @@ public class RouteService : IRouteService
         return results.OrderBy(r => r.DistanceMeters);
     }
 
-    // Haversine formula: distance in meters between two lat/lng points
     private static double HaversineDistance(double lat1, double lng1, double lat2, double lng2)
     {
         const double R = 6371000; // Earth radius in meters
@@ -164,15 +267,17 @@ public class RouteService : IRouteService
         Number = route.Number,
         Name = route.Name,
         EstimatedDurationMinutes = route.EstimatedDurationMinutes,
-        Stops = route.Stops.OrderBy(s => s.Order).Select(MapStopToDto).ToList()
+        Stops = route.RouteStops.OrderBy(rs => rs.Order).Select(rs => MapStopToDto(rs.Stop, rs.Order)).ToList()
     };
 
-    private static StopDto MapStopToDto(Stop stop) => new()
+    private static StopDto MapStopToDto(Stop stop, int order) => new()
     {
         Id = stop.Id,
         Name = stop.Name,
         Latitude = stop.Latitude,
         Longitude = stop.Longitude,
-        Order = stop.Order
+        Order = order,
+        OsmId = stop.OsmId,
+        TransportType = stop.TransportType
     };
 }

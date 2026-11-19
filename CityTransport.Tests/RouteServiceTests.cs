@@ -43,14 +43,27 @@ public class RouteServiceTests : IAsyncLifetime
         {
             Number = number,
             Name = name,
-            EstimatedDurationMinutes = duration,
-            Stops = stops ?? new List<Stop>
-            {
-                new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031, Order = 1 },
-                new() { Name = "Площа Ринок", Latitude = 49.844, Longitude = 24.032, Order = 2 },
-                new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025, Order = 3 }
-            }
+            EstimatedDurationMinutes = duration
         };
+
+        var stopsToUse = stops ?? new List<Stop>
+        {
+            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031 },
+            new() { Name = "Площа Ринок", Latitude = 49.844, Longitude = 24.032 },
+            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025 }
+        };
+
+        var order = 1;
+        foreach (var s in stopsToUse)
+        {
+            route.RouteStops.Add(new RouteStop
+            {
+                Route = route,
+                Stop = s,
+                Order = order++
+            });
+        }
+
         _context.Routes.Add(route);
         await _context.SaveChangesAsync();
         return route;
@@ -61,7 +74,6 @@ public class RouteServiceTests : IAsyncLifetime
     [Fact]
     public async Task GetAllRoutesAsync_ReturnsEmpty_WhenNoRoutes()
     {
-        // The seeded route from migrations won't have stops, so clear and test
         _context.Routes.RemoveRange(_context.Routes);
         await _context.SaveChangesAsync();
 
@@ -78,7 +90,6 @@ public class RouteServiceTests : IAsyncLifetime
 
         var result = (await _service.GetAllRoutesAsync()).ToList();
 
-        // Filter only the ones we seeded (snapshot may add one route without stops)
         var seeded = result.Where(r => r.Number == "11" || r.Number == "15").ToList();
         Assert.Equal(2, seeded.Count);
     }
@@ -86,19 +97,30 @@ public class RouteServiceTests : IAsyncLifetime
     [Fact]
     public async Task GetAllRoutesAsync_ReturnsStopsInOrder()
     {
-        await SeedRouteAsync("10", "Центр - Вокзал", 20, new List<Stop>
+        var route = new Route
         {
-            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025, Order = 3 },
-            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031, Order = 1 },
-            new() { Name = "Площа Ринок", Latitude = 49.844, Longitude = 24.032, Order = 2 },
-        });
+            Number = "10",
+            Name = "Центр - Вокзал",
+            EstimatedDurationMinutes = 20
+        };
+
+        var stop3 = new Stop { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025 };
+        var stop1 = new Stop { Name = "Центр", Latitude = 49.842, Longitude = 24.031 };
+        var stop2 = new Stop { Name = "Площа Ринок", Latitude = 49.844, Longitude = 24.032 };
+
+        route.RouteStops.Add(new RouteStop { Route = route, Stop = stop3, Order = 3 });
+        route.RouteStops.Add(new RouteStop { Route = route, Stop = stop1, Order = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Stop = stop2, Order = 2 });
+
+        _context.Routes.Add(route);
+        await _context.SaveChangesAsync();
 
         var result = (await _service.GetAllRoutesAsync()).ToList();
-        var route = result.First(r => r.Number == "10");
+        var fetchedRoute = result.First(r => r.Number == "10");
 
-        Assert.Equal(1, route.Stops[0].Order);
-        Assert.Equal(2, route.Stops[1].Order);
-        Assert.Equal(3, route.Stops[2].Order);
+        Assert.Equal(1, fetchedRoute.Stops[0].Order);
+        Assert.Equal(2, fetchedRoute.Stops[1].Order);
+        Assert.Equal(3, fetchedRoute.Stops[2].Order);
     }
 
     // ── GetRouteById ──────────────────────────────────────
@@ -150,9 +172,9 @@ public class RouteServiceTests : IAsyncLifetime
         Assert.Equal(35, result.EstimatedDurationMinutes);
 
         // Verify persisted in DB
-        var fromDb = await _context.Routes.Include(r => r.Stops).FirstOrDefaultAsync(r => r.Number == "42");
+        var fromDb = await _context.Routes.Include(r => r.RouteStops).FirstOrDefaultAsync(r => r.Number == "42");
         Assert.NotNull(fromDb);
-        Assert.Equal(3, fromDb!.Stops.Count);
+        Assert.Equal(3, fromDb!.RouteStops.Count);
     }
 
     [Fact]
@@ -174,6 +196,54 @@ public class RouteServiceTests : IAsyncLifetime
 
         Assert.Equal(1, result.Stops[0].Order);
         Assert.Equal(2, result.Stops[1].Order);
+    }
+
+    [Fact]
+    public async Task CreateRouteAsync_CanReuseExistingStops_AcrossMultipleRoutes()
+    {
+        // 1. Create a physical stop in the catalog
+        var sharedStop = new Stop { Name = "Головний вокзал", Latitude = 49.838, Longitude = 24.025 };
+        var stopA = new Stop { Name = "Зупинка А", Latitude = 49.840, Longitude = 24.030 };
+        var stopB = new Stop { Name = "Зупинка Б", Latitude = 49.850, Longitude = 24.040 };
+        _context.Stops.AddRange(sharedStop, stopA, stopB);
+        await _context.SaveChangesAsync();
+
+        // 2. Route 1 uses sharedStop at Order 1
+        var route1Dto = new CreateRouteRequestDto
+        {
+            Number = "1",
+            Name = "Вокзал - Зупинка А",
+            Stops = new List<StopRequestDto>
+            {
+                new() { StopId = sharedStop.Id, Name = sharedStop.Name, Latitude = sharedStop.Latitude, Longitude = sharedStop.Longitude, Order = 1 },
+                new() { StopId = stopA.Id, Name = stopA.Name, Latitude = stopA.Latitude, Longitude = stopA.Longitude, Order = 2 }
+            }
+        };
+        var route1 = await _service.CreateRouteAsync(route1Dto);
+
+        // 3. Route 2 ALSO uses sharedStop at Order 2
+        var route2Dto = new CreateRouteRequestDto
+        {
+            Number = "2",
+            Name = "Зупинка Б - Вокзал",
+            Stops = new List<StopRequestDto>
+            {
+                new() { StopId = stopB.Id, Name = stopB.Name, Latitude = stopB.Latitude, Longitude = stopB.Longitude, Order = 1 },
+                new() { StopId = sharedStop.Id, Name = sharedStop.Name, Latitude = sharedStop.Latitude, Longitude = sharedStop.Longitude, Order = 2 }
+            }
+        };
+        var route2 = await _service.CreateRouteAsync(route2Dto);
+
+        // Assert: both routes successfully reference the same physical Stop
+        Assert.Equal(sharedStop.Id, route1.Stops[0].Id);
+        Assert.Equal(1, route1.Stops[0].Order);
+
+        Assert.Equal(sharedStop.Id, route2.Stops[1].Id);
+        Assert.Equal(2, route2.Stops[1].Order);
+
+        // Verify physical stop was NOT duplicated
+        var allStopsWithThisName = await _context.Stops.Where(s => s.Name == "Головний вокзал").ToListAsync();
+        Assert.Single(allStopsWithThisName);
     }
 
     // ── UpdateRouteStops ──────────────────────────────────
@@ -200,8 +270,8 @@ public class RouteServiceTests : IAsyncLifetime
         Assert.Equal(45, result.EstimatedDurationMinutes);
         Assert.Contains(result.Stops, s => s.Name == "Нова зупинка A");
 
-        // Old stops should be gone
-        var stopsInDb = await _context.Stops.Where(s => s.RouteId == seeded.Id).ToListAsync();
+        // Old route stops should be replaced with 2
+        var stopsInDb = await _context.RouteStops.Where(s => s.RouteId == seeded.Id).ToListAsync();
         Assert.Equal(2, stopsInDb.Count);
     }
 
@@ -240,11 +310,11 @@ public class RouteServiceTests : IAsyncLifetime
     [Fact]
     public async Task FindRoutesAsync_ReturnsMatchingRoutes()
     {
-        // Route 10: Центр (order=1) → Вокзал (order=3) in Lviv
+        // Route 10: Центр (order=1) → Вокзал (order=2) in Lviv
         await SeedRouteAsync("10", "Центр - Вокзал", 20, new List<Stop>
         {
-            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031, Order = 1 },
-            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025, Order = 2 }
+            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031 },
+            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025 }
         });
 
         // Search from near Центр to near Вокзал
@@ -262,8 +332,8 @@ public class RouteServiceTests : IAsyncLifetime
         // Route with 2 stops
         await SeedRouteAsync("10", "Центр - Вокзал", 20, new List<Stop>
         {
-            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031, Order = 1 },
-            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025, Order = 2 }
+            new() { Name = "Центр", Latitude = 49.842, Longitude = 24.031 },
+            new() { Name = "Вокзал", Latitude = 49.838, Longitude = 24.025 }
         });
 
         // Search in REVERSE direction (from near Вокзал to near Центр)

@@ -62,6 +62,7 @@ builder.Services.AddScoped<ITransferWindowValidator, TransferWindowValidator>();
 builder.Services.AddScoped<IPaymentGateway, MonobankPaymentGateway>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRouteService, RouteService>();
+builder.Services.AddScoped<IStopService, StopService>();
 
 builder.Services.Configure<CryptoSettings>(builder.Configuration.GetSection("CryptoSettings"));
 builder.Services.AddTransient<IQRCodeGeneratorService, QRCodeGeneratorService>();

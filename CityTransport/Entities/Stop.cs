@@ -6,8 +6,8 @@ public class Stop
     public string Name { get; set; } = string.Empty;
     public double Latitude { get; set; }
     public double Longitude { get; set; }
-    public int Order { get; set; }
+    public long? OsmId { get; set; }
+    public string? TransportType { get; set; }
 
-    public Guid RouteId { get; set; }
-    public Route Route { get; set; } = null!;
+    public ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
 }

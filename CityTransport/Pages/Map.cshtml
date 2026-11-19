@@ -6,21 +6,40 @@
 
 <style>
     #map {
-        height: 70vh;
+        height: 72vh;
         width: 100%;
         border-radius: 8px;
         border: 1px solid #dee2e6;
     }
-    .route-legend { max-height: 300px; overflow-y: auto; }
+    .route-legend { max-height: 280px; overflow-y: auto; }
     .stop-badge { font-size: 0.75rem; }
     #plan-panel, #search-panel { display: none; }
     .mode-active { background-color: #0d6efd !important; color: white !important; }
+    .plan-subtab.active { font-weight: bold; border-bottom: 2px solid #0d6efd; }
+    .selected-stop-item {
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        padding: 5px 8px;
+        margin-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .selected-stop-item:hover { background-color: #eef2f7; }
+    .btn-xs { padding: 1px 5px; font-size: 0.75rem; }
+    .osrm-badge { font-size: 0.75rem; }
 </style>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
 <div class="container-fluid px-3">
-    <h2 class="mb-3">🗺 Карта маршрутів CityTransport</h2>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="mb-0">🗺 Карта маршрутів CityTransport</h2>
+        <div id="catalog-stops-counter" class="badge bg-light text-dark border">
+            Зупинок у базі: <span id="stops-count-val">0</span>
+        </div>
+    </div>
 
     <!-- Mode buttons -->
     <div class="btn-group mb-3" role="group">
@@ -33,11 +52,12 @@
         <!-- Map -->
         <div class="col-md-9">
             <div id="map"></div>
+            <div id="map-notice" class="small text-muted mt-1"></div>
         </div>
 
         <!-- Side panels -->
         <div class="col-md-3">
-            <!-- View panel: route legend -->
+            <!-- 1. VIEW PANEL -->
             <div id="view-panel">
                 <h5>Маршрути</h5>
                 <div id="route-legend" class="route-legend">
@@ -45,36 +65,103 @@
                 </div>
             </div>
 
-            <!-- Plan panel -->
+            <!-- 2. PLAN PANEL (Зупинки & Формування маршруту) -->
             <div id="plan-panel">
-                <h5>✏️ Новий маршрут</h5>
-                <div class="mb-2">
-                    <label class="form-label">Номер маршруту</label>
-                    <input id="plan-number" type="text" class="form-control" placeholder="напр. 42" />
+                <!-- Sub-mode navigation -->
+                <ul class="nav nav-pills nav-fill mb-2 small" id="plan-subtabs">
+                    <li class="nav-item">
+                        <button class="nav-link active py-1" id="subtab-stops-btn" onclick="setPlanSubTab('stops')">📌 Зупинки</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link py-1" id="subtab-route-btn" onclick="setPlanSubTab('route')">🚍 Формування</button>
+                    </li>
+                </ul>
+
+                <!-- ПІДРОЗДІЛ А: «Зупинки» (довідник та імпорт) -->
+                <div id="plan-section-stops">
+                    <div class="card mb-2 p-2 bg-light">
+                        <h6 class="mb-1 text-primary">📥 Імпорт з OpenStreetMap</h6>
+                        <p class="text-muted small mb-2">Завантажити зупинки для поточної видимої області карти через Overpass API.</p>
+                        <button class="btn btn-primary btn-sm mb-1" id="btn-overpass-import" onclick="importStopsFromOverpass()">
+                            📥 Завантажити зупинки з карти
+                        </button>
+                        <div id="overpass-status" class="small mt-1"></div>
+                    </div>
+
+                    <div class="card p-2 bg-light">
+                        <h6 class="mb-1 text-success">➕ Створити зупинку вручну</h6>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Назва зупинки</label>
+                            <input id="manual-stop-name" type="text" class="form-control form-control-sm" placeholder="напр. вул. Зелена" />
+                        </div>
+                        <div class="row g-1 mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Широта (Lat)</label>
+                                <input id="manual-stop-lat" type="number" step="0.00001" class="form-control form-control-sm" placeholder="49.84..." />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Довгота (Lng)</label>
+                                <input id="manual-stop-lng" type="number" step="0.00001" class="form-control form-control-sm" placeholder="24.03..." />
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Тип транспорту</label>
+                            <select id="manual-stop-type" class="form-select form-select-sm">
+                                <option value="bus">Автобус</option>
+                                <option value="tram">Трамвай</option>
+                                <option value="trolleybus">Тролейбус</option>
+                                <option value="public_transport">Усі види</option>
+                            </select>
+                        </div>
+                        <div class="d-flex gap-1 mb-2">
+                            <button id="btn-pick-coord" class="btn btn-outline-secondary btn-sm flex-grow-1" onclick="togglePickCoordMode()">
+                                📍 Вказати на карті
+                            </button>
+                            <button class="btn btn-success btn-sm flex-grow-1" onclick="saveManualStop()">
+                                💾 Зберегти
+                            </button>
+                        </div>
+                        <div id="manual-stop-status" class="small"></div>
+                    </div>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Назва (звідки – куди)</label>
-                    <input id="plan-name" type="text" class="form-control" placeholder="напр. Центр – Аеропорт" />
+
+                <!-- ПІДРОЗДІЛ Б: «Формування маршруту» -->
+                <div id="plan-section-route" style="display: none;">
+                    <h6 class="text-primary mb-1">Зупинки маршруту</h6>
+                    <p class="text-muted small mb-2">Клікайте по <b>позначених зупинках на карті</b>, щоб додати їх до маршруту.</p>
+
+                    <div id="selected-stops-container" class="mb-2" style="max-height: 200px; overflow-y: auto;">
+                        <span class="text-muted small">Жодної зупинки ще не обрано.</span>
+                    </div>
+
+                    <div id="osrm-routing-status" class="mb-2"></div>
+
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Номер маршруту</label>
+                        <input id="plan-number" type="text" class="form-control form-control-sm" placeholder="напр. 3A або 42" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Назва (звідки – куди)</label>
+                        <input id="plan-name" type="text" class="form-control form-control-sm" placeholder="напр. Центр – Сихів" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Орієнт. час (хв)</label>
+                        <input id="plan-duration" type="number" class="form-control form-control-sm" value="25" min="1" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label text-muted small mb-0">JWT токен (Admin/Carrier, якщо є)</label>
+                        <input id="plan-token" type="password" class="form-control form-control-sm" placeholder="Bearer токен..." />
+                    </div>
+
+                    <div class="d-grid gap-1">
+                        <button class="btn btn-success btn-sm" onclick="saveRoute()">💾 Зберегти маршрут</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="clearSelectedRouteStops()">🗑 Очистити список</button>
+                    </div>
+                    <div id="plan-message" class="mt-2"></div>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label">Орієнт. час (хв)</label>
-                    <input id="plan-duration" type="number" class="form-control" value="30" min="1" />
-                </div>
-                <div class="mb-2">
-                    <label class="form-label text-muted small">JWT токен (Carrier / Admin)</label>
-                    <input id="plan-token" type="password" class="form-control form-control-sm" placeholder="Bearer токен (якщо є)..." />
-                </div>
-                <p class="text-muted small">Натискайте на карту, щоб додавати зупинки</p>
-                <div id="plan-stops-list" class="mb-2 small"></div>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-warning btn-sm" onclick="undoLastStop()">↩ Видалити останню</button>
-                    <button class="btn btn-success" onclick="saveRoute()">💾 Зберегти маршрут</button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="clearPlan()">🗑 Очистити</button>
-                </div>
-                <div id="plan-message" class="mt-2"></div>
             </div>
 
-            <!-- Search panel -->
+            <!-- 3. SEARCH PANEL -->
             <div id="search-panel">
                 <h5>🔍 Пошук маршруту</h5>
                 <p class="text-muted small">Натисніть на карті точку відправлення, потім точку призначення</p>
@@ -96,17 +183,25 @@
 @section Scripts {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // ── State ──────────────────────────────────────────────
+    // ── Global State ──────────────────────────────────────────────
     const ROUTE_COLORS = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999'];
-    let map, currentMode = 'view';
-    let routeLayers = [];
-    let planMarkers = [], planPolyline = null;
+    let map;
+    let currentMode = 'view';             // 'view' | 'plan' | 'search'
+    let planSubTab = 'stops';            // 'stops' | 'route'
+    let isPickingCoord = false;          // true when picking lat/lng for manual stop
+
+    // Map Layers
+    let routeLayers = [];                // lines and markers for view mode
+    let catalogStopMarkers = [];         // all DB stops on map
+    let manualTempMarker = null;         // marker for manual stop coordinate picker
+    let planRouteLayer = null;           // OSRM GeoJSON or fallback Polyline
+    let selectedRouteStops = [];         // [{ id, name, latitude, longitude, transportType }]
     let searchFromMarker = null, searchToMarker = null;
     let searchFromLatLng = null, searchToLatLng = null;
     let searchResultLayers = [];
-    let searchStep = 0; // 0=pick from, 1=pick to
+    let searchStep = 0;
 
-    // ── Init ──────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
         map = L.map('map').setView([49.842, 24.031], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -115,33 +210,43 @@
         }).addTo(map);
 
         map.on('click', onMapClick);
+
         const savedToken = localStorage.getItem('jwt_token');
         if (savedToken && document.getElementById('plan-token')) {
             document.getElementById('plan-token').value = savedToken;
         }
+
         loadAllRoutes();
+        loadCatalogStops();
     });
 
-    // ── Mode switching ────────────────────────────────────
+    // ── Mode Switching ────────────────────────────────────────────
     function setMode(mode) {
         currentMode = mode;
         document.getElementById('view-panel').style.display = mode === 'view' ? '' : 'none';
         document.getElementById('plan-panel').style.display = mode === 'plan' ? '' : 'none';
         document.getElementById('search-panel').style.display = mode === 'search' ? '' : 'none';
-        ['view','plan','search'].forEach(m => {
+
+        ['view', 'plan', 'search'].forEach(m => {
             const btn = document.getElementById('btn-' + m);
             btn.classList.toggle('mode-active', m === mode);
         });
 
+        stopCoordPickMode();
+
         if (mode === 'view') {
             clearSearchMarkers();
-            clearPlan();
+            clearPlanLayer();
+            hideCatalogStops();
             showRouteLines();
         } else if (mode === 'plan') {
             clearSearchMarkers();
             hideRouteLines();
+            showCatalogStops();
+            setPlanSubTab(planSubTab);
         } else if (mode === 'search') {
-            clearPlan();
+            clearPlanLayer();
+            hideCatalogStops();
             showRouteLines();
             searchStep = 0;
             searchFromLatLng = null;
@@ -149,16 +254,460 @@
         }
     }
 
-    // ── Map click handler ─────────────────────────────────
+    function setPlanSubTab(tab) {
+        planSubTab = tab;
+        document.getElementById('subtab-stops-btn').classList.toggle('active', tab === 'stops');
+        document.getElementById('subtab-route-btn').classList.toggle('active', tab === 'route');
+        document.getElementById('plan-section-stops').style.display = tab === 'stops' ? '' : 'none';
+        document.getElementById('plan-section-route').style.display = tab === 'route' ? '' : 'none';
+
+        if (tab === 'route') {
+            stopCoordPickMode();
+            document.getElementById('map-notice').innerHTML =
+                '<span class="text-primary">ℹ️ Режим «Формування маршруту»: натискайте на зупинки на карті, щоб додати їх до послідовності.</span>';
+        } else {
+            document.getElementById('map-notice').innerHTML = '';
+        }
+    }
+
+    // ── Map Click Handler ─────────────────────────────────────────
     function onMapClick(e) {
         if (currentMode === 'plan') {
-            addPlanStop(e.latlng);
+            if (isPickingCoord) {
+                // Set coordinates into manual stop form
+                document.getElementById('manual-stop-lat').value = e.latlng.lat.toFixed(6);
+                document.getElementById('manual-stop-lng').value = e.latlng.lng.toFixed(6);
+
+                if (manualTempMarker) map.removeLayer(manualTempMarker);
+                manualTempMarker = L.marker(e.latlng, { icon: greenIcon() }).addTo(map)
+                    .bindPopup('Обрані координати нової зупинки').openPopup();
+
+                stopCoordPickMode();
+                document.getElementById('manual-stop-status').innerHTML =
+                    '<span class="text-success small">Координати встановлено! Введіть назву та натисніть «Зберегти».</span>';
+            }
+            // In route planning sub-mode, clicking empty map does NOT create stops (per requirement)
         } else if (currentMode === 'search') {
             handleSearchClick(e.latlng);
         }
     }
 
-    // ── VIEW MODE: load & draw routes ─────────────────────
+    // ── ПІДРОЗДІЛ А: Довідник та імпорт зупинок ───────────────────
+    async function loadCatalogStops() {
+        try {
+            const resp = await fetch('/api/v1/stops');
+            if (!resp.ok) return;
+            const stops = await resp.json();
+            document.getElementById('stops-count-val').innerText = stops.length;
+            renderCatalogStopsOnMap(stops);
+        } catch (err) {
+            console.error('Помилка завантаження зупинок:', err);
+        }
+    }
+
+    function renderCatalogStopsOnMap(stops) {
+        catalogStopMarkers.forEach(m => map.removeLayer(m));
+        catalogStopMarkers = [];
+
+        stops.forEach(stop => {
+            const isSelected = selectedRouteStops.some(s => s.id === stop.id);
+            const marker = L.circleMarker([stop.latitude, stop.longitude], {
+                radius: isSelected ? 8 : 6,
+                color: isSelected ? '#198754' : '#0d6efd',
+                fillColor: isSelected ? '#198754' : '#ffffff',
+                fillOpacity: 0.9,
+                weight: isSelected ? 3 : 2
+            });
+
+            marker.bindTooltip(stop.name, { permanent: false, direction: 'top' });
+
+            marker.on('click', (ev) => {
+                L.DomEvent.stopPropagation(ev);
+                if (currentMode === 'plan' && planSubTab === 'route') {
+                    addStopToRoute(stop);
+                } else {
+                    const popupContent = `
+                        <b>${stop.name}</b><br>
+                        <small class="text-muted">Тип: ${stop.transportType || 'громадський'}<br>
+                        ${stop.latitude.toFixed(5)}, ${stop.longitude.toFixed(5)}</small><br>
+                        <button class="btn btn-primary btn-xs mt-1 w-100" onclick="addStopToRouteFromPopup('${stop.id}', '${stop.name.replace(/'/g, "\\'")}', ${stop.latitude}, ${stop.longitude})">
+                            ➕ Додати до маршруту
+                        </button>
+                    `;
+                    marker.bindPopup(popupContent).openPopup();
+                }
+            });
+
+            if (currentMode === 'plan') {
+                marker.addTo(map);
+            }
+            catalogStopMarkers.push(marker);
+        });
+    }
+
+    function hideCatalogStops() { catalogStopMarkers.forEach(m => map.removeLayer(m)); }
+    function showCatalogStops() { catalogStopMarkers.forEach(m => m.addTo(map)); }
+
+    // ── Overpass API Import ───────────────────────────────────────
+    async function importStopsFromOverpass() {
+        const statusEl = document.getElementById('overpass-status');
+        const btn = document.getElementById('btn-overpass-import');
+        const bounds = map.getBounds();
+
+        const south = bounds.getSouth().toFixed(5);
+        const west = bounds.getWest().toFixed(5);
+        const north = bounds.getNorth().toFixed(5);
+        const east = bounds.getEast().toFixed(5);
+
+        btn.disabled = true;
+        statusEl.innerHTML = '<span class="text-primary">⏳ Запит до Overpass API...</span>';
+
+        const query = `[out:json][timeout:25];
+(
+  node["highway"="bus_stop"](${south},${west},${north},${east});
+  node["public_transport"="platform"](${south},${west},${north},${east});
+  node["public_transport"="stop_position"](${south},${west},${north},${east});
+);
+out body;`;
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+            const overpassResp = await fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query), {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (!overpassResp.ok) throw new Error('Overpass повернув статус ' + overpassResp.status);
+            const data = await overpassResp.json();
+
+            if (!data.elements || data.elements.length === 0) {
+                statusEl.innerHTML = '<span class="text-warning">⚠️ У видимій області карти зупинок не знайдено.</span>';
+                btn.disabled = false;
+                return;
+            }
+
+            statusEl.innerHTML = `<span class="text-primary">Знайдено ${data.elements.length} об'єктів. Збереження в базу даних...</span>`;
+
+            // Prepare batch import payload
+            const payload = {
+                stops: data.elements.map(el => {
+                    const tags = el.tags || {};
+                    const name = tags.name || tags['name:uk'] || tags['name:en'] || tags.ref || `Зупинка #${el.id}`;
+                    let tType = 'bus';
+                    if (tags.tram === 'yes' || tags.railway === 'tram_stop') tType = 'tram';
+                    else if (tags.trolleybus === 'yes') tType = 'trolleybus';
+
+                    return {
+                        name: name,
+                        latitude: el.lat,
+                        longitude: el.lon,
+                        osmId: el.id,
+                        transportType: tType
+                    };
+                })
+            };
+
+            const backendResp = await fetch('/api/v1/stops/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!backendResp.ok) throw new Error('Бекенд повернув статус ' + backendResp.status);
+            const res = await backendResp.json();
+
+            statusEl.innerHTML = `<span class="text-success">✅ Імпортовано: <b>${res.importedCount}</b> нових зупинок (пропущено ${res.skippedDuplicatesCount} дублікатів).</span>`;
+
+            await loadCatalogStops();
+        } catch (err) {
+            console.error('Overpass import error:', err);
+            statusEl.innerHTML = `<span class="text-danger">⚠️ Помилка імпорту: ${err.message}. Спробуйте ще раз або зменшіть масштаб.</span>`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ── Створення зупинки вручну ─────────────────────────────────
+    function togglePickCoordMode() {
+        isPickingCoord = !isPickingCoord;
+        const btn = document.getElementById('btn-pick-coord');
+        if (isPickingCoord) {
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-warning');
+            btn.innerText = '🎯 Клікніть по карті';
+            document.getElementById('manual-stop-status').innerHTML =
+                '<span class="text-warning small">Клікніть по карті в точці розташування зупинки.</span>';
+        } else {
+            stopCoordPickMode();
+        }
+    }
+
+    function stopCoordPickMode() {
+        isPickingCoord = false;
+        const btn = document.getElementById('btn-pick-coord');
+        if (btn) {
+            btn.classList.remove('btn-warning');
+            btn.classList.add('btn-outline-secondary');
+            btn.innerText = '📍 Вказати на карті';
+        }
+    }
+
+    async function saveManualStop() {
+        const nameInput = document.getElementById('manual-stop-name');
+        const latInput = document.getElementById('manual-stop-lat');
+        const lngInput = document.getElementById('manual-stop-lng');
+        const typeInput = document.getElementById('manual-stop-type');
+        const statusEl = document.getElementById('manual-stop-status');
+
+        const name = nameInput.value.trim();
+        const lat = parseFloat(latInput.value);
+        const lng = parseFloat(lngInput.value);
+        const type = typeInput.value;
+
+        if (!name) {
+            statusEl.innerHTML = '<span class="text-danger">Введіть назву зупинки!</span>';
+            return;
+        }
+        if (isNaN(lat) || isNaN(lng)) {
+            statusEl.innerHTML = '<span class="text-danger">Вкажіть коректні координати (Lat/Lng)!</span>';
+            return;
+        }
+
+        try {
+            statusEl.innerHTML = '<span class="text-primary">Збереження...</span>';
+            const resp = await fetch('/api/v1/stops', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, latitude: lat, longitude: lng, transportType: type })
+            });
+
+            if (!resp.ok) throw new Error('Помилка сервера ' + resp.status);
+            const saved = await resp.json();
+
+            statusEl.innerHTML = `<span class="text-success">✅ Зупинку «${saved.name}» збережено!</span>`;
+            nameInput.value = '';
+            latInput.value = '';
+            lngInput.value = '';
+            if (manualTempMarker) { map.removeLayer(manualTempMarker); manualTempMarker = null; }
+
+            await loadCatalogStops();
+        } catch (err) {
+            statusEl.innerHTML = `<span class="text-danger">Помилка: ${err.message}</span>`;
+        }
+    }
+
+    // ── ПІДРОЗДІЛ Б: Формування маршруту ─────────────────────────
+    function addStopToRouteFromPopup(id, name, lat, lng) {
+        addStopToRoute({ id, name, latitude: lat, longitude: lng });
+        setPlanSubTab('route');
+    }
+
+    function addStopToRoute(stop) {
+        // Prevent immediate adjacent duplicates
+        if (selectedRouteStops.length > 0 && selectedRouteStops[selectedRouteStops.length - 1].id === stop.id) {
+            return;
+        }
+
+        selectedRouteStops.push({
+            id: stop.id,
+            name: stop.name,
+            latitude: stop.latitude,
+            longitude: stop.longitude,
+            transportType: stop.transportType
+        });
+
+        renderSelectedStopsList();
+        buildOsrmRouteLine();
+    }
+
+    function moveStopOrder(index, direction) {
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= selectedRouteStops.length) return;
+
+        const temp = selectedRouteStops[index];
+        selectedRouteStops[index] = selectedRouteStops[targetIndex];
+        selectedRouteStops[targetIndex] = temp;
+
+        renderSelectedStopsList();
+        buildOsrmRouteLine();
+    }
+
+    function removeStopFromRoute(index) {
+        selectedRouteStops.splice(index, 1);
+        renderSelectedStopsList();
+        buildOsrmRouteLine();
+    }
+
+    function clearSelectedRouteStops() {
+        selectedRouteStops = [];
+        renderSelectedStopsList();
+        clearPlanLayer();
+        document.getElementById('plan-message').innerHTML = '';
+        document.getElementById('osrm-routing-status').innerHTML = '';
+    }
+
+    function renderSelectedStopsList() {
+        const container = document.getElementById('selected-stops-container');
+        if (!selectedRouteStops.length) {
+            container.innerHTML = '<span class="text-muted small">Жодної зупинки ще не обрано.</span>';
+            return;
+        }
+
+        container.innerHTML = selectedRouteStops.map((s, idx) => `
+            <div class="selected-stop-item">
+                <div class="text-truncate" style="max-width: 140px;">
+                    <span class="badge bg-primary me-1">${idx + 1}</span>
+                    <span class="small font-weight-bold" title="${s.name}">${s.name}</span>
+                </div>
+                <div>
+                    <button class="btn btn-outline-secondary btn-xs" onclick="moveStopOrder(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                    <button class="btn btn-outline-secondary btn-xs" onclick="moveStopOrder(${idx}, 1)" ${idx === selectedRouteStops.length - 1 ? 'disabled' : ''}>▼</button>
+                    <button class="btn btn-outline-danger btn-xs" onclick="removeStopFromRoute(${idx})">✕</button>
+                </div>
+            </div>
+        `).join('');
+
+        // Re-render catalog markers with selection highlights
+        renderCatalogStopsOnMap(catalogStopMarkers.map(m => m.options._stopData || {}));
+    }
+
+    // ── OSRM Routing with Fallback ────────────────────────────────
+    async function buildOsrmRouteLine() {
+        clearPlanLayer();
+        const statusEl = document.getElementById('osrm-routing-status');
+
+        if (selectedRouteStops.length < 2) {
+            statusEl.innerHTML = '';
+            return;
+        }
+
+        statusEl.innerHTML = '<span class="text-muted small">🚗 Побудова лінії по дорогах (OSRM)...</span>';
+
+        // OSRM coordinates: {lon},{lat};{lon},{lat}...
+        const coordString = selectedRouteStops.map(s => `${s.longitude},${s.latitude}`).join(';');
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+            const resp = await fetch(osrmUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!resp.ok) throw new Error('OSRM API HTTP ' + resp.status);
+            const data = await resp.json();
+
+            if (data.code !== 'Ok' || !data.routes || !data.routes.length) {
+                throw new Error('OSRM не зміг побудувати шлях: ' + (data.message || ''));
+            }
+
+            const bestRoute = data.routes[0];
+            planRouteLayer = L.geoJSON(bestRoute.geometry, {
+                style: { color: '#0d6efd', weight: 5, opacity: 0.85 }
+            }).addTo(map);
+
+            const durationMin = Math.max(1, Math.round(bestRoute.duration / 60));
+            const distanceKm = (bestRoute.distance / 1000).toFixed(1);
+            document.getElementById('plan-duration').value = durationMin;
+
+            statusEl.innerHTML = `
+                <div class="alert alert-success p-1 mb-1 osrm-badge">
+                    ✅ OSRM: шлях ${distanceKm} км, ~${durationMin} хв
+                </div>`;
+        } catch (err) {
+            console.warn('OSRM routing failed, falling back to direct polyline:', err.message);
+
+            // Fallback: simple polyline connecting stops
+            const latlngs = selectedRouteStops.map(s => [s.latitude, s.longitude]);
+            planRouteLayer = L.polyline(latlngs, {
+                color: '#ffc107',
+                weight: 4,
+                dashArray: '6, 6',
+                opacity: 0.9
+            }).addTo(map);
+
+            statusEl.innerHTML = `
+                <div class="alert alert-warning p-1 mb-1 osrm-badge">
+                    ⚠️ OSRM недоступний (${err.message}). Відображено пряму лінію.
+                </div>`;
+        }
+    }
+
+    function clearPlanLayer() {
+        if (planRouteLayer) {
+            map.removeLayer(planRouteLayer);
+            planRouteLayer = null;
+        }
+    }
+
+    // ── Збереження маршруту ───────────────────────────────────────
+    async function saveRoute() {
+        const number = document.getElementById('plan-number').value.trim();
+        const name = document.getElementById('plan-name').value.trim();
+        const duration = parseInt(document.getElementById('plan-duration').value) || 25;
+        const msgEl = document.getElementById('plan-message');
+
+        if (!number || !name) {
+            msgEl.innerHTML = '<div class="alert alert-warning p-2">Вкажіть номер та назву маршруту!</div>';
+            return;
+        }
+        if (selectedRouteStops.length < 2) {
+            msgEl.innerHTML = '<div class="alert alert-warning p-2">Додайте принаймні 2 зупинки до маршруту!</div>';
+            return;
+        }
+
+        const payload = {
+            number: number,
+            name: name,
+            estimatedDurationMinutes: duration,
+            stops: selectedRouteStops.map((s, idx) => ({
+                stopId: s.id,
+                name: s.name,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                order: idx + 1,
+                transportType: s.transportType
+            }))
+        };
+
+        try {
+            const inputToken = document.getElementById('plan-token')?.value?.trim();
+            const token = inputToken || localStorage.getItem('jwt_token') || '';
+            if (inputToken) localStorage.setItem('jwt_token', inputToken);
+
+            msgEl.innerHTML = '<div class="alert alert-info p-2">Збереження маршруту...</div>';
+
+            const resp = await fetch('/api/v1/routes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (resp.status === 401 || resp.status === 403) {
+                msgEl.innerHTML = '<div class="alert alert-danger p-2">❌ Потрібна роль Admin/Carrier для збереження маршруту. Введіть валідний JWT токен вище.</div>';
+                return;
+            }
+            if (!resp.ok) throw new Error('Помилка сервера HTTP ' + resp.status);
+
+            const saved = await resp.json();
+            msgEl.innerHTML = `<div class="alert alert-success p-2">✅ Маршрут №${saved.number} «${saved.name}» (${saved.stops.length} зуп.) успішно збережено в базі!</div>`;
+
+            clearSelectedRouteStops();
+            document.getElementById('plan-number').value = '';
+            document.getElementById('plan-name').value = '';
+
+            loadAllRoutes();
+        } catch (err) {
+            msgEl.innerHTML = `<div class="alert alert-danger p-2">❌ Помилка: ${err.message}</div>`;
+        }
+    }
+
+    // ── VIEW MODE ─────────────────────────────────────────────────
     async function loadAllRoutes() {
         try {
             const resp = await fetch('/api/v1/routes');
@@ -168,7 +717,7 @@
             buildLegend(routes);
         } catch (err) {
             document.getElementById('route-legend').innerHTML =
-                '<p class="text-warning">Маршрути недоступні (API не запущено або немає даних)</p>';
+                '<p class="text-warning small">Маршрути недоступні або ще не створені.</p>';
         }
     }
 
@@ -186,8 +735,8 @@
             route.stops.forEach((stop, si) => {
                 const isFirst = si === 0, isLast = si === route.stops.length - 1;
                 const icon = isFirst || isLast
-                    ? L.circleMarker([stop.latitude, stop.longitude], { radius: 9, color, fillColor: color, fillOpacity: 1, weight: 2 })
-                    : L.circleMarker([stop.latitude, stop.longitude], { radius: 6, color, fillColor: '#fff', fillOpacity: 1, weight: 2 });
+                    ? L.circleMarker([stop.latitude, stop.longitude], { radius: 8, color, fillColor: color, fillOpacity: 1, weight: 2 })
+                    : L.circleMarker([stop.latitude, stop.longitude], { radius: 5, color, fillColor: '#fff', fillOpacity: 1, weight: 2 });
                 icon.bindPopup(`<b>${stop.name}</b><br>Маршрут №${route.number}<br>Зупинка ${stop.order}`);
                 icon.addTo(map);
                 routeLayers.push(icon);
@@ -197,10 +746,10 @@
 
     function buildLegend(routes) {
         const el = document.getElementById('route-legend');
-        if (!routes.length) { el.innerHTML = '<p class="text-muted">Маршрутів ще немає</p>'; return; }
+        if (!routes.length) { el.innerHTML = '<p class="text-muted small">Маршрутів ще немає.</p>'; return; }
         el.innerHTML = routes.map((r, i) => `
             <div class="d-flex align-items-center mb-1">
-                <span style="width:16px;height:16px;background:${ROUTE_COLORS[i % ROUTE_COLORS.length]};border-radius:3px;display:inline-block;margin-right:6px;flex-shrink:0"></span>
+                <span style="width:14px;height:14px;background:${ROUTE_COLORS[i % ROUTE_COLORS.length]};border-radius:3px;display:inline-block;margin-right:6px;flex-shrink:0"></span>
                 <span class="small"><b>№${r.number}</b> ${r.name} <span class="badge bg-secondary stop-badge">${r.stops.length} зуп.</span></span>
             </div>`).join('');
     }
@@ -212,94 +761,7 @@
     function hideRouteLines() { routeLayers.forEach(l => map.removeLayer(l)); }
     function showRouteLines() { routeLayers.forEach(l => l.addTo(map)); }
 
-    // ── PLAN MODE ─────────────────────────────────────────
-    function addPlanStop(latlng) {
-        const order = planMarkers.length + 1;
-        const marker = L.marker(latlng, { draggable: true }).addTo(map);
-        marker.bindPopup(`Зупинка ${order}`).openPopup();
-        marker.on('dragend', redrawPlanPolyline);
-        planMarkers.push(marker);
-        redrawPlanPolyline();
-        updatePlanStopsList();
-    }
-
-    function undoLastStop() {
-        if (!planMarkers.length) return;
-        const last = planMarkers.pop();
-        map.removeLayer(last);
-        redrawPlanPolyline();
-        updatePlanStopsList();
-    }
-
-    function redrawPlanPolyline() {
-        if (planPolyline) { map.removeLayer(planPolyline); planPolyline = null; }
-        if (planMarkers.length > 1) {
-            planPolyline = L.polyline(planMarkers.map(m => m.getLatLng()), { color: '#28a745', weight: 4, dashArray: '8,4' }).addTo(map);
-        }
-    }
-
-    function updatePlanStopsList() {
-        const el = document.getElementById('plan-stops-list');
-        if (!planMarkers.length) { el.innerHTML = '<span class="text-muted">Зупинок ще немає</span>'; return; }
-        el.innerHTML = planMarkers.map((m, i) => {
-            const ll = m.getLatLng();
-            return `<div>${i+1}. ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}</div>`;
-        }).join('');
-    }
-
-    function clearPlan() {
-        planMarkers.forEach(m => map.removeLayer(m));
-        planMarkers = [];
-        if (planPolyline) { map.removeLayer(planPolyline); planPolyline = null; }
-        updatePlanStopsList();
-        document.getElementById('plan-message').innerHTML = '';
-    }
-
-    async function saveRoute() {
-        const number = document.getElementById('plan-number').value.trim();
-        const name = document.getElementById('plan-name').value.trim();
-        const duration = parseInt(document.getElementById('plan-duration').value) || 30;
-        const msgEl = document.getElementById('plan-message');
-
-        if (!number || !name) { msgEl.innerHTML = '<div class="alert alert-warning p-2">Введіть номер та назву маршруту</div>'; return; }
-        if (planMarkers.length < 2) { msgEl.innerHTML = '<div class="alert alert-warning p-2">Додайте принаймні 2 зупинки</div>'; return; }
-
-        const payload = {
-            number, name,
-            estimatedDurationMinutes: duration,
-            stops: planMarkers.map((m, i) => {
-                const ll = m.getLatLng();
-                return { name: `Зупинка ${i + 1}`, latitude: ll.lat, longitude: ll.lng, order: i + 1 };
-            })
-        };
-
-        try {
-            const inputToken = document.getElementById('plan-token')?.value?.trim();
-            const token = inputToken || localStorage.getItem('jwt_token') || '';
-            if (inputToken) localStorage.setItem('jwt_token', inputToken);
-
-            const resp = await fetch('/api/v1/routes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
-                body: JSON.stringify(payload)
-            });
-
-            if (resp.status === 401 || resp.status === 403) {
-                msgEl.innerHTML = '<div class="alert alert-danger p-2">❌ Потрібна роль Admin/Carrier для збереження маршруту. Введіть валідний JWT токен вище.</div>';
-                return;
-            }
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
-            const saved = await resp.json();
-            msgEl.innerHTML = `<div class="alert alert-success p-2">✅ Маршрут №${saved.number} збережено!</div>`;
-            clearPlan();
-            loadAllRoutes(); // refresh
-        } catch (err) {
-            msgEl.innerHTML = `<div class="alert alert-danger p-2">❌ Помилка: ${err.message}</div>`;
-        }
-    }
-
-    // ── SEARCH MODE ───────────────────────────────────────
+    // ── SEARCH MODE ───────────────────────────────────────────────
     function handleSearchClick(latlng) {
         if (searchStep === 0) {
             if (searchFromMarker) map.removeLayer(searchFromMarker);
@@ -324,16 +786,16 @@
         }
 
         clearSearchResultLayers();
-        resultsEl.innerHTML = '<p class="text-muted">Пошук...</p>';
+        resultsEl.innerHTML = '<p class="text-muted small">Пошук...</p>';
 
         try {
             const url = `/api/v1/routes/search?fromLat=${searchFromLatLng.lat}&fromLng=${searchFromLatLng.lng}&toLat=${searchToLatLng.lat}&toLng=${searchToLatLng.lng}`;
             const resp = await fetch(url);
-            if (!resp.ok) throw new Error('API error');
+            if (!resp.ok) throw new Error('API error ' + resp.status);
             const results = await resp.json();
 
             if (!results.length) {
-                resultsEl.innerHTML = '<div class="alert alert-info p-2">Маршрути не знайдено</div>';
+                resultsEl.innerHTML = '<div class="alert alert-info p-2 small">Маршрути між обраними точками не знайдено.</div>';
                 return;
             }
 
@@ -346,7 +808,6 @@
                     </small>
                 </div>`).join('');
 
-            // Highlight matching routes on map
             const allRoutesResp = await fetch('/api/v1/routes');
             if (allRoutesResp.ok) {
                 const allRoutes = await allRoutesResp.json();
@@ -360,7 +821,7 @@
                 });
             }
         } catch (err) {
-            resultsEl.innerHTML = `<div class="alert alert-danger p-2">Помилка: ${err.message}</div>`;
+            resultsEl.innerHTML = `<div class="alert alert-danger p-2 small">Помилка: ${err.message}</div>`;
         }
     }
 
@@ -379,7 +840,7 @@
         searchResultLayers = [];
     }
 
-    // ── Custom icons ──────────────────────────────────────
+    // ── Icons ─────────────────────────────────────────────────────
     function greenIcon() {
         return L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize: [41,41] });
     }

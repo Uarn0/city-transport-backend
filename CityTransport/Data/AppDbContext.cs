@@ -1,4 +1,4 @@
-﻿using CityTransport.Entities;
+using CityTransport.Entities;
 using Microsoft.EntityFrameworkCore;
 using Route = CityTransport.Entities.Route;
 
@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Tariff> Tariffs => Set<Tariff>();
     public DbSet<Route> Routes => Set<Route>();
+    public DbSet<Stop> Stops => Set<Stop>();
+    public DbSet<RouteStop> RouteStops => Set<RouteStop>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
@@ -23,6 +25,25 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Tariff>()
             .HasMany(t => t.Routes)
             .WithMany(r => r.Tariffs);
+
+        // configure relationships for RouteStop
+        modelBuilder.Entity<RouteStop>()
+            .HasOne(rs => rs.Route)
+            .WithMany(r => r.RouteStops)
+            .HasForeignKey(rs => rs.RouteId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RouteStop>()
+            .HasOne(rs => rs.Stop)
+            .WithMany(s => s.RouteStops)
+            .HasForeignKey(rs => rs.StopId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RouteStop>()
+            .HasIndex(rs => new { rs.RouteId, rs.Order });
+
+        modelBuilder.Entity<Stop>()
+            .HasIndex(s => s.OsmId);
 
         // configure relationships for Order
         modelBuilder.Entity<Order>()

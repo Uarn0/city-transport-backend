@@ -66,6 +66,9 @@ namespace CityTransport.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("EstimatedDurationMinutes")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -82,9 +85,63 @@ namespace CityTransport.Migrations
                         new
                         {
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
+                            EstimatedDurationMinutes = 0,
                             Name = "Центр - Вокзал",
                             Number = "10"
                         });
+                });
+
+            modelBuilder.Entity("CityTransport.Entities.RouteStop", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RouteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StopId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StopId");
+
+                    b.HasIndex("RouteId", "Order");
+
+                    b.ToTable("RouteStops");
+                });
+
+            modelBuilder.Entity("CityTransport.Entities.Stop", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long?>("OsmId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TransportType")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OsmId");
+
+                    b.ToTable("Stops");
                 });
 
             modelBuilder.Entity("CityTransport.Entities.Tariff", b =>
@@ -266,6 +323,25 @@ namespace CityTransport.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("CityTransport.Entities.RouteStop", b =>
+                {
+                    b.HasOne("CityTransport.Entities.Route", "Route")
+                        .WithMany("RouteStops")
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CityTransport.Entities.Stop", "Stop")
+                        .WithMany("RouteStops")
+                        .HasForeignKey("StopId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Route");
+
+                    b.Navigation("Stop");
+                });
+
             modelBuilder.Entity("CityTransport.Entities.Ticket", b =>
                 {
                     b.HasOne("CityTransport.Entities.Order", "Order")
@@ -316,6 +392,16 @@ namespace CityTransport.Migrations
                     b.Navigation("Ticket");
 
                     b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("CityTransport.Entities.Route", b =>
+                {
+                    b.Navigation("RouteStops");
+                });
+
+            modelBuilder.Entity("CityTransport.Entities.Stop", b =>
+                {
+                    b.Navigation("RouteStops");
                 });
 
             modelBuilder.Entity("CityTransport.Entities.User", b =>
